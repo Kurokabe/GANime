@@ -193,3 +193,4 @@ pip-selfcheck.json
 
 *.npy
 checkpoints/*
+ganime_results/*

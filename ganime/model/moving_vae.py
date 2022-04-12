@@ -5,8 +5,9 @@ import tensorflow_probability as tfp
 
 
 class MovingVAE(Model):
-    def __init__(self, input_shape, encoded_size=32, base_depth=32):
+    def __init__(self, input_shape, encoded_size=64, base_depth=32):
         super().__init__()
+
         self.encoded_size = encoded_size
         self.base_depth = base_depth
 
@@ -66,7 +67,7 @@ class MovingVAE(Model):
                 tf.keras.layers.InputLayer(input_shape=[self.encoded_size]),
                 tf.keras.layers.Reshape([1, 1, 1, self.encoded_size]),
                 tf.keras.layers.Conv3DTranspose(
-                    2 * self.base_depth,
+                    self.base_depth,
                     (5, 4, 4),
                     strides=1,
                     padding="valid",

@@ -1,21 +1,21 @@
 from ray.tune import Trainable
-from ganime.data.base import load_dataset
 from ganime.model.base import load_model
+from ganime.data.base import load_dataset
 
 
 class TrainableGANime(Trainable):
     def setup(self, config):
-        self.dataset = load_dataset(config["dataset"])
-        self.model = load_model(config["model"])
-        self.epochs = config["epochs"]
+        self.train_dataset, self.test_dataset, input_shape = load_dataset(
+            dataset_name=config["dataset_name"],
+            dataset_path=config["dataset_path"],
+            batch_size=config["batch_size"],
+        )
+        self.model = load_model(config["model"], input_shape=input_shape, config=config)
 
     def step(self):
-        for _ in range(self.epochs):
-            self.model.fit(self.dataset)
-        # score = objective(self.x, self.a, self.b)
-        # self.x += 1
-        # return {"score": score}
-        pass
+        self.model.fit(self.train_dataset, epochs=1)
+        score = self.model.evaluate(self.test_dataset)
+        return {"loss": score}
 
     def save_checkpoint(self, tmp_checkpoint_dir):
         # checkpoint_path = os.path.join(tmp_checkpoint_dir, "model.pth")
