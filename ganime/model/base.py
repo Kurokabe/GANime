@@ -14,5 +14,7 @@ def load_model(model: str, input_shape: tuple, config: dict) -> tf.keras.Model:
                 optimizer=tf.optimizers.Adam(learning_rate=config["lr"]),
                 loss=negloglik,
             )
+            # model.build(input_shape=(None, *input_shape))
+            # model.summary()
 
         return model
