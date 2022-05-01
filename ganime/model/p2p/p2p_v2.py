@@ -7,11 +7,21 @@ from tensorflow.keras.layers import (
     BatchNormalization,
     Conv2D,
     Conv2DTranspose,
+    Conv3D,
+    Conv3DTranspose,
     Dense,
+    Flatten,
+    Input,
+    Layer,
     LeakyReLU,
+    MaxPooling2D,
+    Reshape,
     TimeDistributed,
+    UpSampling2D,
 )
 from tensorflow.keras.losses import Loss
+from tensorflow.keras.losses import KLDivergence, MeanSquaredError
+from tqdm.auto import tqdm
 
 
 class KLCriterion(Loss):
@@ -27,159 +37,21 @@ class KLCriterion(Loss):
             + (tf.exp(logvar1) + tf.square(mu1 - mu2)) / (2 * tf.exp(logvar2))
             - 0.5
         )
-        return tf.reduce_sum(kld) / 20
+        return kld
 
 
-class Encoder(Model):
-    def __init__(self, dim, nc=1):
-        super().__init__()
-        self.dim = dim
-        self.c1 = Sequential(
-            [
-                TimeDistributed(Conv2D(64, kernel_size=4, strides=2, padding="same")),
-                BatchNormalization(),
-                LeakyReLU(alpha=0.2),
-            ]
-        )
-        self.c2 = Sequential(
-            [
-                TimeDistributed(Conv2D(128, kernel_size=4, strides=2, padding="same")),
-                BatchNormalization(),
-                LeakyReLU(alpha=0.2),
-            ]
-        )
-        self.c3 = Sequential(
-            [
-                TimeDistributed(Conv2D(256, kernel_size=4, strides=2, padding="same")),
-                BatchNormalization(),
-                LeakyReLU(alpha=0.2),
-            ]
-        )
-        self.c4 = Sequential(
-            [
-                TimeDistributed(Conv2D(512, kernel_size=4, strides=2, padding="same")),
-                BatchNormalization(),
-                LeakyReLU(alpha=0.2),
-            ]
-        )
-        self.c5 = Sequential(
-            [
-                TimeDistributed(
-                    Conv2D(self.dim, kernel_size=4, strides=1, padding="valid")
-                ),
-                BatchNormalization(),
-                Activation("tanh"),
-            ]
-        )
-
-    def call(self, input):
-        sequence_length = input.shape[1]
-        h1 = self.c1(input)
-        h2 = self.c2(h1)
-        h3 = self.c3(h2)
-        h4 = self.c4(h3)
-        h5 = self.c5(h4)
-        return tf.reshape(h5, (-1, sequence_length, self.dim)), [h1, h2, h3, h4, h5]
-
-
-class Decoder(Model):
-    def __init__(self, dim, nc=1):
-        super().__init__()
-        self.dim = dim
-        self.upc1 = Sequential(
-            [
-                TimeDistributed(
-                    Conv2DTranspose(512, kernel_size=4, strides=1, padding="valid")
-                ),
-                BatchNormalization(),
-                LeakyReLU(alpha=0.2),
-            ]
-        )
-        self.upc2 = Sequential(
-            [
-                TimeDistributed(
-                    Conv2DTranspose(256, kernel_size=4, strides=2, padding="same")
-                ),
-                BatchNormalization(),
-                LeakyReLU(alpha=0.2),
-            ]
-        )
-        self.upc3 = Sequential(
-            [
-                TimeDistributed(
-                    Conv2DTranspose(128, kernel_size=4, strides=2, padding="same")
-                ),
-                BatchNormalization(),
-                LeakyReLU(alpha=0.2),
-            ]
-        )
-        self.upc4 = Sequential(
-            [
-                TimeDistributed(
-                    Conv2DTranspose(64, kernel_size=4, strides=2, padding="same")
-                ),
-                BatchNormalization(),
-                LeakyReLU(alpha=0.2),
-            ]
-        )
-        self.upc5 = Sequential(
-            [
-                TimeDistributed(
-                    Conv2DTranspose(1, kernel_size=4, strides=2, padding="same")
-                ),
-                Activation("sigmoid"),
-            ]
-        )
-
-    def call(self, input):
-        vec, skip = input
-        # TODO change the sequence_length
-        sequence_length = 20 - 1
-        d1 = self.upc1(tf.reshape(vec, (-1, sequence_length, 1, 1, self.dim)))
-        d2 = self.upc2(tf.concat([d1, skip[3]], axis=-1))
-        d3 = self.upc3(tf.concat([d2, skip[2]], axis=-1))
-        d4 = self.upc4(tf.concat([d3, skip[1]], axis=-1))
-        output = self.upc5(tf.concat([d4, skip[0]], axis=-1))
-        return output
-
-
-class MyLSTM(Model):
-    def __init__(self, input_shape, hidden_size, output_size, n_layers):
-        super().__init__()
-        self.hidden_size = hidden_size
-        self.n_layers = n_layers
-        self.embed = TimeDistributed(Dense(hidden_size, input_dim=input_shape))
-        self.lstm = LSTM(hidden_size, return_sequences=True)
-        self.out = TimeDistributed(Dense(output_size))
+class Sampling(Layer):
+    """Uses (z_mean, z_log_var) to sample z, the vector encoding a digit."""
 
     def call(self, inputs):
-        h_in = self.embed(inputs)
-        h_out = self.lstm(h_in)
-        return self.out(h_out)
+        z_mean, z_log_var = inputs
+        batch = tf.shape(z_mean)[0]
+        dim = tf.shape(z_mean)[1]
+        epsilon = tf.keras.backend.random_normal(shape=(batch, dim))
+        return z_mean + tf.exp(0.5 * z_log_var) * epsilon
 
-
-class MyGaussianLSTM(Model):
-    def __init__(self, input_shape, hidden_size, output_size, n_layers):
-        super().__init__()
-        self.hidden_size = hidden_size
-        self.n_layers = n_layers
-        self.embed = TimeDistributed(Dense(hidden_size, input_dim=input_shape))
-        self.lstm = LSTM(hidden_size, return_sequences=True)
-        self.mu_net = TimeDistributed(Dense(output_size))
-        self.logvar_net = TimeDistributed(Dense(output_size))
-
-    def reparameterize(self, mu, logvar: tf.Tensor):
-        logvar = tf.math.exp(logvar * 0.5)
-        eps = tf.random.normal(logvar.shape)
-        return tf.add(tf.math.multiply(eps, logvar), mu)
-
-    def call(self, inputs):
-        h_in = self.embed(inputs)
-        h_in = self.lstm(h_in)
-        mu = self.mu_net(h_in)
-        logvar = self.logvar_net(h_in)
-        z = self.reparameterize(mu, logvar)
-        return z, mu, logvar
+    def compute_output_shape(self, input_shape):
+        return input_shape[0]
 
 
 class P2P(Model):
@@ -195,9 +67,9 @@ class P2P(Model):
         skip_prob: float = 0.1,
         n_past: int = 1,
         last_frame_skip: bool = False,
-        beta: float = 0.9,
-        weight_align: float = 0.0,
-        weight_cpc: float = 1000.0,
+        beta: float = 0.0001,
+        weight_align: float = 0.1,
+        weight_cpc: float = 100,
     ):
         super().__init__()
         # Models parameters
@@ -217,140 +89,339 @@ class P2P(Model):
         self.weight_align = weight_align
         self.weight_cpc = weight_cpc
 
-        self.frame_predictor = MyLSTM(
-            self.g_dim + self.z_dim + 1 + 1,
-            self.rnn_size,
-            self.g_dim,
-            self.predictor_rnn_layers,
+        self.frame_predictor = self.build_lstm()
+        self.prior = self.build_gaussian_lstm()
+        self.posterior = self.build_gaussian_lstm()
+        self.encoder = self.build_encoder()
+        self.decoder = self.build_decoder()
+
+        self.total_loss_tracker = tf.keras.metrics.Mean(name="total_loss")
+        self.reconstruction_loss_tracker = tf.keras.metrics.Mean(
+            name="reconstruction_loss"
         )
+        self.kl_loss_tracker = tf.keras.metrics.Mean(name="kl_loss")
+        self.align_loss_tracker = tf.keras.metrics.Mean(name="align_loss")
+        self.cpc_loss_tracker = tf.keras.metrics.Mean(name="align_loss")
 
-        self.prior = MyGaussianLSTM(
-            self.g_dim + self.g_dim + 1 + 1,
-            self.rnn_size,
-            self.z_dim,
-            self.prior_rnn_layers,
+        self.kl_loss = KLCriterion(
+            reduction=tf.keras.losses.Reduction.NONE
+        )  # KLDivergence(reduction=tf.keras.losses.Reduction.NONE)
+        self.mse = MeanSquaredError(reduction=tf.keras.losses.Reduction.NONE)
+        self.align_loss = MeanSquaredError(reduction=tf.keras.losses.Reduction.NONE)
+
+        # self.optimizer = tf.keras.optimizers.Adam(
+        #     learning_rate=0.001, beta_1=0.9, beta_2=0.999, epsilon=1e-8
+        # )
+        # self.prior_optimizer = tf.keras.optimizers.Adam(
+        #     learning_rate=0.001, beta_1=0.9, beta_2=0.999, epsilon=1e-8
+        # )
+
+    # region Model building
+    def build_lstm(self):
+        input = Input(shape=(None, self.g_dim + self.z_dim))
+        embed = TimeDistributed(Dense(self.rnn_size))(input)
+        lstm = LSTM(self.rnn_size)(embed)
+        output = Dense(self.g_dim)(lstm)
+        output = (tf.expand_dims(output, axis=1),)
+
+        return Model(inputs=input, outputs=output, name="frame_predictor")
+
+    def build_gaussian_lstm(self):
+
+        input = Input(shape=(None, self.g_dim))
+        embed = TimeDistributed(Dense(self.rnn_size))(input)
+        lstm = LSTM(self.rnn_size)(embed)
+        mu = Dense(self.z_dim)(lstm)
+        logvar = Dense(self.z_dim)(lstm)
+        z = Sampling()([mu, logvar])
+
+        return Model(inputs=input, outputs=[mu, logvar, z])
+
+    def build_encoder(self):
+
+        input = Input(shape=(1, 64, 64, 1))
+
+        h = TimeDistributed(Conv2D(64, kernel_size=4, strides=2, padding="same"))(input)
+        h = BatchNormalization()(h)
+        h = LeakyReLU(alpha=0.2)(h)
+        h = TimeDistributed(MaxPooling2D(pool_size=2, strides=2, padding="same"))(h)
+
+        h = TimeDistributed(Conv2D(128, kernel_size=4, strides=2, padding="same"))(h)
+        h = BatchNormalization()(h)
+        h = LeakyReLU(alpha=0.2)(h)
+        h = TimeDistributed(MaxPooling2D(pool_size=2, strides=2, padding="same"))(h)
+
+        h = TimeDistributed(Conv2D(256, kernel_size=4, strides=2, padding="same"))(h)
+        h = BatchNormalization()(h)
+        h = LeakyReLU(alpha=0.2)(h)
+        h = TimeDistributed(MaxPooling2D(pool_size=2, strides=2, padding="same"))(h)
+
+        h = TimeDistributed(Conv2D(512, kernel_size=4, strides=2, padding="same"))(h)
+        h = BatchNormalization()(h)
+        h = LeakyReLU(alpha=0.2)(h)
+        h = TimeDistributed(MaxPooling2D(pool_size=2, strides=2, padding="same"))(h)
+
+        h = Flatten()(h)
+        output = Dense(self.g_dim)(h)
+        output = tf.expand_dims(output, axis=1)
+        return Model(inputs=input, outputs=output, name="encoder")
+        # mu = Dense(self.g_dim)(h)
+        # logvar = Dense(self.g_dim)(h)
+
+        # z = Sampling()([mu, logvar])
+
+        # mu, logvar, z = (
+        #     tf.expand_dims(mu, axis=1),
+        #     tf.expand_dims(logvar, axis=1),
+        #     tf.expand_dims(z, axis=1),
+        # )
+
+        # return Model(inputs=input, outputs=[mu, logvar, z], name="encoder")
+
+    def build_decoder(self):
+        latent_inputs = Input(
+            shape=(
+                1,
+                self.g_dim,
+            )
         )
+        x = Dense(1 * 1 * 1 * 512, activation="relu")(latent_inputs)
+        x = Reshape((1, 1, 1, 512))(x)
+        x = TimeDistributed(
+            Conv2DTranspose(512, kernel_size=4, strides=1, padding="valid")
+        )(x)
+        x = BatchNormalization()(x)
+        x = LeakyReLU(alpha=0.2)(x)
 
-        self.posterior = MyGaussianLSTM(
-            self.g_dim + self.g_dim + 1 + 1,
-            self.rnn_size,
-            self.z_dim,
-            self.posterior_rnn_layers,
-        )
+        x = TimeDistributed(
+            Conv2DTranspose(256, kernel_size=4, strides=2, padding="same")
+        )(x)
+        x = BatchNormalization()(x)
+        x = LeakyReLU(alpha=0.2)(x)
 
-        self.encoder = Encoder(self.g_dim, self.channels)
-        self.decoder = Decoder(self.g_dim, self.channels)
+        x = TimeDistributed(
+            Conv2DTranspose(128, kernel_size=4, strides=2, padding="same")
+        )(x)
+        x = BatchNormalization()(x)
+        x = LeakyReLU(alpha=0.2)(x)
 
-        # criterions
-        self.mse_criterion = tf.keras.losses.MeanSquaredError()
-        self.kl_criterion = KLCriterion()
-        self.align_criterion = tf.keras.losses.MeanSquaredError()
+        x = TimeDistributed(
+            Conv2DTranspose(64, kernel_size=4, strides=2, padding="same")
+        )(x)
+        x = BatchNormalization()(x)
+        x = LeakyReLU(alpha=0.2)(x)
 
-        # optimizers
-        self.frame_predictor_optimizer = tf.keras.optimizers.Adam(
-            learning_rate=0.001, beta_1=0.9, beta_2=0.999, epsilon=1e-8
-        )
-        self.posterior_optimizer = tf.keras.optimizers.Adam(
-            learning_rate=0.001, beta_1=0.9, beta_2=0.999, epsilon=1e-8
-        )
-        self.prior_optimizer = tf.keras.optimizers.Adam(
-            learning_rate=0.001, beta_1=0.9, beta_2=0.999, epsilon=1e-8
-        )
-        self.encoder_optimizer = tf.keras.optimizers.Adam(
-            learning_rate=0.001, beta_1=0.9, beta_2=0.999, epsilon=1e-8
-        )
-        self.decoder_optimizer = tf.keras.optimizers.Adam(
-            learning_rate=0.001, beta_1=0.9, beta_2=0.999, epsilon=1e-8
-        )
+        x = TimeDistributed(
+            Conv2DTranspose(1, kernel_size=4, strides=2, padding="same")
+        )(x)
+        x = Activation("sigmoid")(x)
 
-    def get_time_until_control_point(self, batch_size, sequence_length):
-        nx, ny = (sequence_length - 1, batch_size)
+        return Model(inputs=latent_inputs, outputs=x, name="decoder")
 
-        # Create array of [batch_size, sequence_length] with value ranging from 0 to 1
-        x = np.linspace(0, 1, nx)
-        y = np.linspace(0, 1, ny)
-        xv, yv = np.meshgrid(x, y)
+    # endregion
 
-        xv = np.expand_dims(xv, axis=-1)
-        return tf.convert_to_tensor(
-            1 - xv, dtype=tf.float32
-        )  # We want value going from 1 to 0, hence the 1 - xv
+    @property
+    def metrics(self):
+        return [
+            self.total_loss_tracker,
+            self.reconstruction_loss_tracker,
+            self.kl_loss_tracker,
+            self.align_loss_tracker,
+            self.cpc_loss_tracker,
+        ]
 
-    def call(self, x):
-        batch_size, sequence_length, height, width, channels = x.shape
+    def call(self, inputs, training=None, mask=None):
+        first_frame = inputs[:, 0:1, ...]
+        last_frame = inputs[:, -1:, ...]
+
+        desired_length = 20
+        previous_frame = first_frame
+        generated = [first_frame]
+
+        z_last = self.encoder(last_frame)
+        for i in range(1, desired_length):
+
+            z_prev = self.encoder(previous_frame)
+            prior_input = tf.concat([z_prev, z_last], axis=1)
+
+            z_mean_prior, z_log_var_prior, z_prior = self.prior(prior_input)
+
+            predictor_input = tf.concat(
+                (z_prev, tf.expand_dims(z_prior, axis=1)), axis=-1
+            )
+            z_pred = self.frame_predictor(predictor_input)
+
+            current_frame = self.decoder(z_pred)
+            generated.append(current_frame)
+            previous_frame = current_frame
+        return tf.concat(generated, axis=1)
+
+    def train_step(self, data):
+        global_batch_size = 100  # * 8
+        x, y = data
+
+        first_frame = x[:, 0:1, ...]
+        last_frame = x[:, -1:, ...]
+        desired_length = y.shape[1]
+        previous_frame = first_frame
+
+        reconstruction_loss = 0
+        kl_loss = 0
+        align_loss = 0
+        cpc_loss = 0
 
         with tf.GradientTape(persistent=True) as tape:
-            encoded_last_frame = self.encoder(x[:, -1:, ...])[0]
-            encoded_last_frame = np.concatenate(
-                [encoded_last_frame for _ in range(19)], axis=1
-            )  # concat to have array of shape [batch_size, sequence_length - 1, n_features]
+            z_last = self.encoder(last_frame)
+            for i in tqdm(range(1, desired_length)):
+                current_frame = y[:, i : i + 1, ...]
+                z_prev = self.encoder(previous_frame)
+                z_curr = self.encoder(current_frame)
 
-            time_until_control_point = self.get_time_until_control_point(
-                batch_size=batch_size, sequence_length=sequence_length
+                prior_input = tf.concat([z_prev, z_last], axis=1)
+                posterior_input = tf.concat([z_curr, z_last], axis=1)
+
+                z_mean_prior, z_log_var_prior, z_prior = self.prior(prior_input)
+                z_mean_posterior, z_log_var_posterior, z_posterior = self.posterior(
+                    posterior_input
+                )
+
+                # predictor_input = z_prev
+                predictor_input = tf.concat(
+                    (z_prev, tf.expand_dims(z_posterior, axis=1)), axis=-1
+                )
+
+                z_pred = self.frame_predictor(predictor_input)
+
+                kl_loss += tf.reduce_sum(
+                    self.kl_loss(
+                        (z_mean_prior, z_log_var_prior),
+                        (z_mean_posterior, z_log_var_posterior),
+                    )
+                ) * (1.0 / global_batch_size)
+
+                align_loss += tf.reduce_sum(self.align_loss(z_pred, z_curr)) * (
+                    1.0 / global_batch_size
+                )
+
+                if i == desired_length - 1:
+                    h_pred_p = self.frame_predictor(
+                        tf.concat([z_prev, tf.expand_dims(z_prior, axis=1)], axis=-1)
+                    )
+                    x_pred_p = self.decoder(h_pred_p)
+                    cpc_loss += tf.reduce_sum(self.mse(x_pred_p, current_frame)) * (
+                        1.0 / global_batch_size
+                    )
+
+                prediction = self.decoder(z_pred)
+                reconstruction_loss += tf.reduce_sum(
+                    self.mse(prediction, current_frame)
+                ) * (1.0 / global_batch_size)
+
+                previous_frame = current_frame
+
+            loss = (
+                reconstruction_loss
+                + kl_loss * self.beta
+                + align_loss * self.weight_align
+                + cpc_loss * self.weight_cpc
             )
 
-            # TODO change the delta time
-            delta_time = tf.fill(
-                [batch_size, sequence_length - 1], 1.0 / sequence_length
+            prior_loss = kl_loss + cpc_loss * self.weight_cpc
+
+        grads_without_prior = tape.gradient(
+            loss,
+            (
+                self.encoder.trainable_weights
+                + self.decoder.trainable_weights
+                + self.posterior.trainable_weights
+                + self.frame_predictor.trainable_weights
+            ),
+        )
+        self.optimizer.apply_gradients(
+            zip(
+                grads_without_prior,
+                (
+                    self.encoder.trainable_weights
+                    + self.decoder.trainable_weights
+                    + self.posterior.trainable_weights
+                    + self.frame_predictor.trainable_weights
+                ),
             )
-            delta_time = np.expand_dims(delta_time, axis=-1)
-
-            h, skip = self.encoder(x[:, 0:-1, ...])
-            h_target = self.encoder(x[:, 1:, ...])[0]
-
-            h_control_point_aware = tf.concat(
-                [h, encoded_last_frame, time_until_control_point, delta_time], axis=2
-            )
-            h_target_control_point_aware = tf.concat(
-                [h_target, encoded_last_frame, time_until_control_point, delta_time],
-                axis=2,
-            )
-
-            zt, mu, logvar = self.posterior(h_control_point_aware)
-            zt_p, mu_p, logvar_p = self.posterior(h_target_control_point_aware)
-
-            concat = tf.concat([h, zt, time_until_control_point, delta_time], axis=2)
-            h_pred = self.frame_predictor(concat)
-            x_pred = self.decoder([h_pred, skip])
-
-            # TODO handle prediction on last frame (cpc_loss)
-
-            align_loss = self.align_criterion(h, h_pred)
-            mse_loss = self.mse_criterion(x_pred, x[:, 1:, ...])
-            kld_loss = self.kl_criterion((mu, logvar), (mu_p, logvar_p))
-            loss = mse_loss + kld_loss * self.beta + align_loss * self.weight_align
-            loss_prior = kld_loss  # + cpc_loss * self.weight_cpc
-
-        var_list_without_prior = (
-            self.frame_predictor.trainable_variables
-            + self.posterior.trainable_variables
-            + self.encoder.trainable_variables
-            + self.decoder.trainable_variables
         )
 
-        var_list_prior = self.prior.trainable_variables
-
-        gradients_without_prior = tape.gradient(loss, var_list_without_prior)
-
-        gradients_prior = tape.gradient(
-            loss_prior,
-            var_list_prior,
+        grads_prior = tape.gradient(
+            prior_loss,
+            self.prior.trainable_weights,
         )
 
-        self.update_model_without_prior(
-            gradients_without_prior,
-            var_list_without_prior,
+        self.optimizer.apply_gradients(
+            zip(
+                grads_prior,
+                self.prior.trainable_weights,
+            )
         )
-        self.update_prior(gradients_prior, var_list_prior)
         del tape
 
-        return mse_loss, kld_loss, loss_prior, align_loss
+        self.total_loss_tracker.update_state(loss)
+        self.kl_loss_tracker.update_state(kl_loss)
+        self.align_loss_tracker.update_state(align_loss)
+        self.reconstruction_loss_tracker.update_state(reconstruction_loss)
+        self.cpc_loss_tracker.update_state(cpc_loss)
 
-    def update_model_without_prior(self, gradients, var_list):
-        self.frame_predictor_optimizer.apply_gradients(zip(gradients, var_list))
-        self.posterior_optimizer.apply_gradients(zip(gradients, var_list))
-        self.encoder_optimizer.apply_gradients(zip(gradients, var_list))
-        self.decoder_optimizer.apply_gradients(zip(gradients, var_list))
+        return {
+            "loss": self.total_loss_tracker.result(),
+            "reconstruction_loss": self.reconstruction_loss_tracker.result(),
+            "kl_loss": self.kl_loss_tracker.result(),
+            "align_loss": self.align_loss_tracker.result(),
+            "cpc_loss": self.cpc_loss_tracker.result(),
+        }
 
-    def update_prior(self, gradients, var_list):
-        self.prior_optimizer.apply_gradients(zip(gradients, var_list))
+        # print("KL_LOSS")
+        # print(kl_loss)
+        # print("ALIGN_LOSS")
+        # print(align_loss)
+        # print("RECONSTRUCTION_LOSS")
+        # print(reconstruction_loss)
+
+        # with tf.GradientTape() as tape:
+        #     z_mean, z_log_var, z = self.encoder(x)
+        #     reconstruction = self.decoder(z)
+        #     reconstruction_loss = tf.reduce_mean(
+        #         tf.reduce_sum(
+        #             tf.keras.losses.binary_crossentropy(y, reconstruction),
+        #             axis=(1, 2),
+        #         )
+        #     )
+        #     kl_loss = -0.5 * (1 + z_log_var - tf.square(z_mean) - tf.exp(z_log_var))
+        #     kl_loss = tf.reduce_mean(tf.reduce_sum(kl_loss, axis=1))
+        #     total_loss = reconstruction_loss + self.kl_beta * kl_loss
+        # grads = tape.gradient(total_loss, self.trainable_weights)
+        # self.optimizer.apply_gradients(zip(grads, self.trainable_weights))
+        # self.total_loss_tracker.update_state(total_loss)
+        # self.reconstruction_loss_tracker.update_state(reconstruction_loss)
+        # self.kl_loss_tracker.update_state(kl_loss)
+        # return {
+        #     "loss": self.total_loss_tracker.result(),
+        #     "reconstruction_loss": self.reconstruction_loss_tracker.result(),
+        #     "kl_loss": self.kl_loss_tracker.result(),
+        # }
+
+    # def test_step(self, data):
+    #     if isinstance(data, tuple):
+    #         data = data[0]
+
+    #     z_mean, z_log_var, z = self.encoder(data)
+    #     reconstruction = self.decoder(z)
+    #     reconstruction_loss = tf.reduce_mean(
+    #         tf.keras.losses.binary_crossentropy(data, reconstruction)
+    #     )
+    #     reconstruction_loss *= 28 * 28
+    #     kl_loss = 1 + z_log_var - tf.square(z_mean) - tf.exp(z_log_var)
+    #     kl_loss = tf.reduce_mean(kl_loss)
+    #     kl_loss *= -0.5
+    #     total_loss = reconstruction_loss + kl_loss
+    #     return {
+    #         "loss": total_loss,
+    #         "reconstruction_loss": reconstruction_loss,
+    #         "kl_loss": kl_loss,
+    #     }

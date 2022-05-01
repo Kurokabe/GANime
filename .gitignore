@@ -199,3 +199,4 @@ models/*
 *.gif
 *.avi
 *.out
+notebooks/model/p2p_v2/*
