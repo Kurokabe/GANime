@@ -1,17 +1,37 @@
-from statistics import mode
+from tqdm.auto import tqdm
 import numpy as np
 import tensorflow as tf
-from tensorflow.python.keras import Model, Sequential
-from tensorflow.python.keras.layers import Dense, LSTMCell, RNN, Conv2D, Conv2DTranspose
-from tensorflow.keras.layers import BatchNormalization, TimeDistributed
-from tensorflow.python.keras.layers.advanced_activations import LeakyReLU
-from tensorflow.keras.layers import Activation
+from tensorflow.keras import Model, Sequential
+from tensorflow.keras.layers import (
+    LSTM,
+    LSTMCell,
+    Activation,
+    BatchNormalization,
+    Conv2D,
+    Conv2DTranspose,
+    Conv3D,
+    Conv3DTranspose,
+    Dense,
+    Flatten,
+    Input,
+    Layer,
+    LeakyReLU,
+    MaxPooling2D,
+    Reshape,
+    TimeDistributed,
+    UpSampling2D,
+)
+from tensorflow.keras.losses import Loss
+from tensorflow.keras.losses import KLDivergence, MeanSquaredError
 
 # from tensorflow_probability.python.layers.dense_variational import (
 #     DenseReparameterization,
 # )
 # import tensorflow_probability as tfp
 from tensorflow.keras.losses import Loss
+
+initializer_conv_dense = tf.keras.initializers.RandomNormal(mean=0.0, stddev=0.02)
+initializer_batch_norm = tf.keras.initializers.RandomNormal(mean=1.0, stddev=0.02)
 
 
 class KLCriterion(Loss):
@@ -27,7 +47,7 @@ class KLCriterion(Loss):
             + (tf.exp(logvar1) + tf.square(mu1 - mu2)) / (2 * tf.exp(logvar2))
             - 0.5
         )
-        return tf.reduce_sum(kld) / 22
+        return tf.reduce_sum(kld) / 100
 
 
 class Encoder(Model):
@@ -36,36 +56,66 @@ class Encoder(Model):
         self.dim = dim
         self.c1 = Sequential(
             [
-                Conv2D(64, kernel_size=4, strides=2, padding="same"),
-                BatchNormalization(),
+                Conv2D(
+                    64,
+                    kernel_size=4,
+                    strides=2,
+                    padding="same",
+                    kernel_initializer=initializer_conv_dense,
+                ),
+                # BatchNormalization(),
                 LeakyReLU(alpha=0.2),
             ]
         )
         self.c2 = Sequential(
             [
-                Conv2D(128, kernel_size=4, strides=2, padding="same"),
-                BatchNormalization(),
+                Conv2D(
+                    128,
+                    kernel_size=4,
+                    strides=2,
+                    padding="same",
+                    kernel_initializer=initializer_conv_dense,
+                ),
+                # BatchNormalization(),
                 LeakyReLU(alpha=0.2),
             ]
         )
         self.c3 = Sequential(
             [
-                Conv2D(256, kernel_size=4, strides=2, padding="same"),
-                BatchNormalization(),
+                Conv2D(
+                    256,
+                    kernel_size=4,
+                    strides=2,
+                    padding="same",
+                    kernel_initializer=initializer_conv_dense,
+                ),
+                # BatchNormalization(),
                 LeakyReLU(alpha=0.2),
             ]
         )
         self.c4 = Sequential(
             [
-                Conv2D(512, kernel_size=4, strides=2, padding="same"),
-                BatchNormalization(),
+                Conv2D(
+                    512,
+                    kernel_size=4,
+                    strides=2,
+                    padding="same",
+                    kernel_initializer=initializer_conv_dense,
+                ),
+                # BatchNormalization(),
                 LeakyReLU(alpha=0.2),
             ]
         )
         self.c5 = Sequential(
             [
-                Conv2D(self.dim, kernel_size=4, strides=1, padding="valid"),
-                BatchNormalization(),
+                Conv2D(
+                    self.dim,
+                    kernel_size=4,
+                    strides=1,
+                    padding="valid",
+                    kernel_initializer=initializer_conv_dense,
+                ),
+                # BatchNormalization(),
                 Activation("tanh"),
             ]
         )
@@ -85,35 +135,65 @@ class Decoder(Model):
         self.dim = dim
         self.upc1 = Sequential(
             [
-                Conv2DTranspose(512, kernel_size=4, strides=1, padding="valid"),
-                BatchNormalization(),
+                Conv2DTranspose(
+                    512,
+                    kernel_size=4,
+                    strides=1,
+                    padding="valid",
+                    kernel_initializer=initializer_conv_dense,
+                ),
+                # BatchNormalization(),
                 LeakyReLU(alpha=0.2),
             ]
         )
         self.upc2 = Sequential(
             [
-                Conv2DTranspose(256, kernel_size=4, strides=2, padding="same"),
-                BatchNormalization(),
+                Conv2DTranspose(
+                    256,
+                    kernel_size=4,
+                    strides=2,
+                    padding="same",
+                    kernel_initializer=initializer_conv_dense,
+                ),
+                # BatchNormalization(),
                 LeakyReLU(alpha=0.2),
             ]
         )
         self.upc3 = Sequential(
             [
-                Conv2DTranspose(128, kernel_size=4, strides=2, padding="same"),
-                BatchNormalization(),
+                Conv2DTranspose(
+                    128,
+                    kernel_size=4,
+                    strides=2,
+                    padding="same",
+                    kernel_initializer=initializer_conv_dense,
+                ),
+                # BatchNormalization(),
                 LeakyReLU(alpha=0.2),
             ]
         )
         self.upc4 = Sequential(
             [
-                Conv2DTranspose(64, kernel_size=4, strides=2, padding="same"),
-                BatchNormalization(),
+                Conv2DTranspose(
+                    64,
+                    kernel_size=4,
+                    strides=2,
+                    padding="same",
+                    kernel_initializer=initializer_conv_dense,
+                ),
+                # BatchNormalization(),
                 LeakyReLU(alpha=0.2),
             ]
         )
         self.upc5 = Sequential(
             [
-                Conv2DTranspose(1, kernel_size=4, strides=2, padding="same"),
+                Conv2DTranspose(
+                    1,
+                    kernel_size=4,
+                    strides=2,
+                    padding="same",
+                    kernel_initializer=initializer_conv_dense,
+                ),
                 Activation("sigmoid"),
             ]
         )
@@ -133,13 +213,23 @@ class MyLSTM(Model):
         super().__init__()
         self.hidden_size = hidden_size
         self.n_layers = n_layers
-        self.embed = Dense(hidden_size, input_dim=input_shape)
+        self.embed = Dense(
+            hidden_size,
+            input_dim=input_shape,
+            kernel_initializer=initializer_conv_dense,
+        )
         # self.lstm = Sequential(
         #     [LSTMCell(hidden_size) for _ in range(n_layers)], name="lstm"
         # )
         # self.lstm = self.create_lstm(hidden_size, n_layers)
-        self.lstm = LSTMCell(hidden_size)
-        self.out = Dense(output_size)
+        self.lstm = [
+            LSTMCell(
+                hidden_size  # , return_sequences=False if i == self.n_layers - 1 else True
+            )
+            for i in range(self.n_layers)
+        ]  # LSTMCell(hidden_size)
+        self.lstm_rnn = tf.keras.layers.RNN(self.lstm[0], return_state=True)
+        self.out = Dense(output_size, kernel_initializer=initializer_conv_dense)
 
     def init_hidden(self, batch_size):
         hidden = []
@@ -157,10 +247,10 @@ class MyLSTM(Model):
 
     def call(self, inputs):
         h_in = self.embed(inputs)
+        h_in = tf.reshape(h_in, (-1, 1, self.hidden_size))
+        h_in, *state = self.lstm_rnn(h_in)
         for i in range(self.n_layers):
-            _, self.hidden[i] = self.lstm(h_in, self.hidden[i])
-            h_in = self.hidden[i][0]
-
+            h_in, state = self.lstm[i](h_in, state)
         return self.out(h_in)
 
 
@@ -169,13 +259,23 @@ class MyGaussianLSTM(Model):
         super().__init__()
         self.hidden_size = hidden_size
         self.n_layers = n_layers
-        self.embed = Dense(hidden_size, input_dim=input_shape)
+        self.embed = Dense(
+            hidden_size,
+            input_dim=input_shape,
+            kernel_initializer=initializer_conv_dense,
+        )
         # self.lstm = Sequential(
         #     [LSTMCell(hidden_size) for _ in range(n_layers)], name="lstm"
         # )
-        self.lstm = LSTMCell(hidden_size)
-        self.mu_net = Dense(output_size)
-        self.logvar_net = Dense(output_size)
+        self.lstm = [
+            LSTMCell(
+                hidden_size  # , return_sequences=False if i == self.n_layers - 1 else True
+            )
+            for i in range(self.n_layers)
+        ]  # LSTMCell(hidden_size)
+        self.lstm_rnn = tf.keras.layers.RNN(self.lstm[0], return_state=True)
+        self.mu_net = Dense(output_size, kernel_initializer=initializer_conv_dense)
+        self.logvar_net = Dense(output_size, kernel_initializer=initializer_conv_dense)
         # self.out = Sequential(
         #     [
         #         tf.keras.layers.Dense(
@@ -207,11 +307,16 @@ class MyGaussianLSTM(Model):
 
     def call(self, inputs):
         h_in = self.embed(inputs)
-        for i in range(self.n_layers):
-            # print(h_in.shape, self.hidden[i][0].shape, self.hidden[i][0].shape)
+        # for i in range(self.n_layers):
+        #     # print(h_in.shape, self.hidden[i][0].shape, self.hidden[i][0].shape)
 
-            _, self.hidden[i] = self.lstm(h_in, self.hidden[i])
-            h_in = self.hidden[i][0]
+        #     _, self.hidden[i] = self.lstm(h_in, self.hidden[i])
+        #     h_in = self.hidden[i][0]
+        h_in = tf.reshape(h_in, (-1, 1, self.hidden_size))
+        h_in, *state = self.lstm_rnn(h_in)
+        for i in range(self.n_layers):
+            h_in, state = self.lstm[i](h_in, state)
+
         mu = self.mu_net(h_in)
         logvar = self.logvar_net(h_in)
         z = self.reparameterize(mu, logvar)
@@ -227,7 +332,7 @@ class P2P(Model):
         rnn_size: int = 256,
         prior_rnn_layers: int = 1,
         posterior_rnn_layers: int = 1,
-        predictor_rnn_layers: float = 1,
+        predictor_rnn_layers: float = 2,
         skip_prob: float = 0.5,
         n_past: int = 1,
         last_frame_skip: bool = False,
@@ -280,22 +385,40 @@ class P2P(Model):
         self.kl_criterion = KLCriterion()
         self.align_criterion = tf.keras.losses.MeanSquaredError()
 
+        self.total_loss_tracker = tf.keras.metrics.Mean(name="total_loss")
+        self.reconstruction_loss_tracker = tf.keras.metrics.Mean(
+            name="reconstruction_loss"
+        )
+        self.kl_loss_tracker = tf.keras.metrics.Mean(name="kl_loss")
+        self.align_loss_tracker = tf.keras.metrics.Mean(name="align_loss")
+        self.cpc_loss_tracker = tf.keras.metrics.Mean(name="align_loss")
+
         # optimizers
-        self.frame_predictor_optimizer = tf.keras.optimizers.Adam(
-            learning_rate=0.0001  # , beta_1=0.9, beta_2=0.999, epsilon=1e-8
-        )
-        self.posterior_optimizer = tf.keras.optimizers.Adam(
-            learning_rate=0.0001  # , beta_1=0.9, beta_2=0.999, epsilon=1e-8
-        )
-        self.prior_optimizer = tf.keras.optimizers.Adam(
-            learning_rate=0.0001  # , beta_1=0.9, beta_2=0.999, epsilon=1e-8
-        )
-        self.encoder_optimizer = tf.keras.optimizers.Adam(
-            learning_rate=0.0001  # , beta_1=0.9, beta_2=0.999, epsilon=1e-8
-        )
-        self.decoder_optimizer = tf.keras.optimizers.Adam(
-            learning_rate=0.0001  # , beta_1=0.9, beta_2=0.999, epsilon=1e-8
-        )
+        # self.frame_predictor_optimizer = tf.keras.optimizers.Adam(
+        #     learning_rate=0.001, beta_1=0.9, beta_2=0.999, epsilon=1e-8
+        # )
+        # self.posterior_optimizer = tf.keras.optimizers.Adam(
+        #     learning_rate=0.001, beta_1=0.9, beta_2=0.999, epsilon=1e-8
+        # )
+        # self.prior_optimizer = tf.keras.optimizers.Adam(
+        #     learning_rate=0.001, beta_1=0.9, beta_2=0.999, epsilon=1e-8
+        # )
+        # self.encoder_optimizer = tf.keras.optimizers.Adam(
+        #     learning_rate=0.001, beta_1=0.9, beta_2=0.999, epsilon=1e-8
+        # )
+        # self.decoder_optimizer = tf.keras.optimizers.Adam(
+        #     learning_rate=0.001, beta_1=0.9, beta_2=0.999, epsilon=1e-8
+        # )
+
+    @property
+    def metrics(self):
+        return [
+            self.total_loss_tracker,
+            self.reconstruction_loss_tracker,
+            self.kl_loss_tracker,
+            self.align_loss_tracker,
+            self.cpc_loss_tracker,
+        ]
 
     def get_global_descriptor(self, x, start_ix=0, cp_ix=None):
         """Get the global descriptor based on x, start_ix, cp_ix."""
@@ -307,30 +430,46 @@ class P2P(Model):
 
         return x_cp, h_cp
 
-    def call(self, x, start_ix=0, cp_ix=-1):
-        batch_size = x.shape[0]
+    def compile(
+        self,
+        frame_predictor_optimizer,
+        prior_optimizer,
+        posterior_optimizer,
+        encoder_optimizer,
+        decoder_optimizer,
+    ):
+        super().compile()
+        self.frame_predictor_optimizer = frame_predictor_optimizer
+        self.prior_optimizer = prior_optimizer
+        self.posterior_optimizer = posterior_optimizer
+        self.encoder_optimizer = encoder_optimizer
+        self.decoder_optimizer = decoder_optimizer
 
-        with tf.GradientTape(persistent=True) as tape:
-            mse_loss = 0
-            kld_loss = 0
-            cpc_loss = 0
-            align_loss = 0
+    def train_step(self, data):
+        y, x = data
+        batch_size = 100
 
-            seq_len = x.shape[1]
-            start_ix = 0
-            cp_ix = seq_len - 1
-            x_cp, global_z = self.get_global_descriptor(
-                x, start_ix, cp_ix
-            )  # here global_z is h_cp
+        mse_loss = 0
+        kld_loss = 0
+        cpc_loss = 0
+        align_loss = 0
 
-            skip_prob = self.skip_prob
+        seq_len = x.shape[1]
+        start_ix = 0
+        cp_ix = seq_len - 1
+        x_cp, global_z = self.get_global_descriptor(
+            x, start_ix, cp_ix
+        )  # here global_z is h_cp
 
-            prev_i = 0
-            max_skip_count = seq_len * skip_prob
-            skip_count = 0
-            probs = np.random.uniform(low=0, high=1, size=seq_len - 1)
+        skip_prob = self.skip_prob
 
-            for i in range(1, seq_len):
+        prev_i = 0
+        max_skip_count = seq_len * skip_prob
+        skip_count = 0
+        probs = np.random.uniform(low=0, high=1, size=seq_len - 1)
+
+        with tf.GradientTape() as tape:
+            for i in tqdm(range(1, seq_len)):
                 if (
                     probs[i - 1] <= skip_prob
                     and i >= self.n_past
@@ -341,7 +480,13 @@ class P2P(Model):
                     skip_count += 1
                     continue
 
-                time_until_cp = tf.fill([batch_size, 1], (cp_ix - i + 1) / cp_ix)
+                if i > 1:
+                    align_loss += self.align_criterion(h, h_pred)
+
+                time_until_cp = tf.fill(
+                    [batch_size, 1],
+                    (cp_ix - i + 1) / cp_ix,
+                )
                 delta_time = tf.fill([batch_size, 1], ((i - prev_i) / cp_ix))
                 prev_i = i
 
@@ -354,34 +499,44 @@ class P2P(Model):
                     h = h[0]
 
                 # Control Point Aware
-                h_cpaw = tf.concat([h, global_z, time_until_cp, delta_time], axis=1)
+                h_cpaw = tf.concat([h, global_z, time_until_cp, delta_time], axis=-1)
                 h_target_cpaw = tf.concat(
-                    [h_target, global_z, time_until_cp, delta_time], axis=1
+                    [h_target, global_z, time_until_cp, delta_time], axis=-1
                 )
+
                 zt, mu, logvar = self.posterior(h_target_cpaw)
                 zt_p, mu_p, logvar_p = self.prior(h_cpaw)
 
-                concat = tf.concat([h, zt, time_until_cp, delta_time], axis=1)
-                h_pred = self.frame_predictor(concat)
+                frame_predictor_input = tf.concat(
+                    [h, zt, time_until_cp, delta_time], axis=-1
+                )
+                h_pred = self.frame_predictor(frame_predictor_input)
                 x_pred = self.decoder([h_pred, skip])
 
                 if i == cp_ix:  # the gen-cp-frame should be exactly as x_cp
                     h_pred_p = self.frame_predictor(
-                        tf.concat([h, zt_p, time_until_cp, delta_time], axis=1)
+                        tf.concat([h, zt_p, time_until_cp, delta_time], axis=-1)
                     )
                     x_pred_p = self.decoder([h_pred_p, skip])
                     cpc_loss = self.mse_criterion(x_pred_p, x_cp)
 
-                if i > 1:
-                    align_loss += self.align_criterion(h[0], h_pred)
-
-                mse_loss += self.mse_criterion(x_pred, x[:, i, ...])
+                mse_loss += tf.reduce_mean(
+                    tf.reduce_sum(
+                        tf.keras.losses.binary_crossentropy(x_pred, x[:, i, ...]),
+                        axis=(1, 2),
+                    )
+                )  # self.mse_criterion(x_pred, x[:, i, ...])
                 kld_loss += self.kl_criterion((mu, logvar), (mu_p, logvar_p))
 
             # backward
-            loss = mse_loss + kld_loss * self.beta + align_loss * self.weight_align
+            loss = (
+                mse_loss
+                + kld_loss * self.beta
+                + align_loss * self.weight_align
+                + cpc_loss * self.weight_cpc
+            )
 
-            prior_loss = kld_loss + cpc_loss * self.weight_cpc
+            # prior_loss = kld_loss + cpc_loss * self.weight_cpc
 
         var_list_frame_predictor = self.frame_predictor.trainable_variables
         var_list_posterior = self.posterior.trainable_variables
@@ -393,58 +548,76 @@ class P2P(Model):
         # align: frame_predictor + encoder
         # kld: posterior + prior + encoder
 
-        var_list_without_prior = (
+        var_list = (
             var_list_frame_predictor
             + var_list_posterior
             + var_list_encoder
             + var_list_decoder
+            + var_list_prior
         )
 
-        gradients_without_prior = tape.gradient(
+        gradients = tape.gradient(
             loss,
-            var_list_without_prior,
+            var_list,
         )
-        gradients_prior = tape.gradient(
-            prior_loss,
-            var_list_prior,
-        )
+        # gradients_prior = tape.gradient(
+        #     prior_loss,
+        #     var_list_prior,
+        # )
 
-        self.update_model_without_prior(
-            gradients_without_prior,
-            var_list_without_prior,
+        self.update_model(
+            gradients,
+            var_list,
         )
-        self.update_prior(gradients_prior, var_list_prior)
-        del tape
+        # self.update_prior(gradients_prior, var_list_prior)
+        # del tape
 
-        return (
-            mse_loss / seq_len,
-            kld_loss / seq_len,
-            cpc_loss / seq_len,
-            align_loss / seq_len,
-        )
+        self.total_loss_tracker.update_state(loss)
+        self.kl_loss_tracker.update_state(kld_loss)
+        self.align_loss_tracker.update_state(align_loss)
+        self.reconstruction_loss_tracker.update_state(mse_loss)
+        self.cpc_loss_tracker.update_state(cpc_loss)
 
-    def p2p_generate(
+        return {
+            "loss": self.total_loss_tracker.result(),
+            "reconstruction_loss": self.reconstruction_loss_tracker.result(),
+            "kl_loss": self.kl_loss_tracker.result(),
+            "align_loss": self.align_loss_tracker.result(),
+            "cpc_loss": self.cpc_loss_tracker.result(),
+        }
+
+    def call(
         self,
-        x,
-        len_output,
-        eval_cp_ix,
-        start_ix=0,
-        cp_ix=-1,
-        model_mode="full",
-        skip_frame=False,
-        init_hidden=True,
+        inputs,
+        training=None,
+        mask=None
+        # len_output,
+        # eval_cp_ix,
+        # start_ix=0,
+        # cp_ix=-1,
+        # model_mode="full",
+        # skip_frame=False,
+        # init_hidden=True,
     ):
-        batch_size, num_frames, h, w, channels = x.shape
+        len_output = 20
+        eval_cp_ix = len_output - 1
+        start_ix = 0
+        cp_ix = -1
+        model_mode = "full"
+        skip_frame = False
+        init_hidden = True
+
+        batch_size, num_frames, h, w, channels = inputs.shape
         dim_shape = (h, w, channels)
 
-        gen_seq = [x[:, 0, ...]]
-        x_in = x[:, 0, ...]
+        gen_seq = [inputs[:, 0, ...]]
+        x_in = inputs[:, 0, ...]
 
-        seq_len = x.shape[1]
+        seq_len = inputs.shape[1]
         cp_ix = seq_len - 1
 
         x_cp, global_z = self.get_global_descriptor(
-            x, cp_ix=cp_ix
+            inputs, cp_ix=cp_ix
         )  # here global_z is h_cp
 
         skip_prob = self.skip_prob
@@ -467,9 +640,9 @@ class P2P(Model):
                 gen_seq.append(tf.zeros_like(x_in))
                 continue
 
-            time_until_cp = tf.fill([batch_size, 1], (eval_cp_ix - i + 1) / eval_cp_ix)
+            time_until_cp = tf.fill([100, 1], (eval_cp_ix - i + 1) / eval_cp_ix)
 
-            delta_time = tf.fill([batch_size, 1], ((i - prev_i) / eval_cp_ix))
+            delta_time = tf.fill([100, 1], ((i - prev_i) / eval_cp_ix))
 
             prev_i = i
 
@@ -480,10 +653,10 @@ class P2P(Model):
             else:
                 h, _ = h
 
-            h_cpaw = tf.concat([h, global_z, time_until_cp, delta_time], axis=1)
+            h_cpaw = tf.concat([h, global_z, time_until_cp, delta_time], axis=-1)
 
             if i < self.n_past:
-                h_target = self.encoder(x[:, i, ...])[0]
+                h_target = self.encoder(inputs[:, i, ...])[0]
                 h_target_cpaw = tf.concat(
                     [h_target, global_z, time_until_cp, delta_time], axis=1
                 )
@@ -493,20 +666,20 @@ class P2P(Model):
 
                 if model_mode == "posterior" or model_mode == "full":
                     self.frame_predictor(
-                        tf.concat([h, zt, time_until_cp, delta_time], axis=1)
+                        tf.concat([h, zt, time_until_cp, delta_time], axis=-1)
                     )
                 elif model_mode == "prior":
                     self.frame_predictor(
-                        tf.concat([h, zt_p, time_until_cp, delta_time], axis=1)
+                        tf.concat([h, zt_p, time_until_cp, delta_time], axis=-1)
                     )
 
-                x_in = x[:, i, ...]
+                x_in = inputs[:, i, ...]
                 gen_seq.append(x_in)
             else:
                 if i < num_frames:
-                    h_target = self.encoder(x[:, i, ...])[0]
+                    h_target = self.encoder(inputs[:, i, ...])[0]
                     h_target_cpaw = tf.concat(
-                        [h_target, global_z, time_until_cp, delta_time], axis=1
+                        [h_target, global_z, time_until_cp, delta_time], axis=-1
                     )
                 else:
                     h_target_cpaw = h_cpaw
@@ -516,22 +689,24 @@ class P2P(Model):
 
                 if model_mode == "posterior":
                     h = self.frame_predictor(
-                        tf.concat([h, zt, time_until_cp, delta_time], axis=1)
+                        tf.concat([h, zt, time_until_cp, delta_time], axis=-1)
                     )
                 elif model_mode == "prior" or model_mode == "full":
                     h = self.frame_predictor(
-                        tf.concat([h, zt_p, time_until_cp, delta_time], axis=1)
+                        tf.concat([h, zt_p, time_until_cp, delta_time], axis=-1)
                     )
 
                 x_in = self.decoder([h, skip])
                 gen_seq.append(x_in)
+
         return tf.stack(gen_seq, axis=1)
 
-    def update_model_without_prior(self, gradients, var_list):
+    def update_model(self, gradients, var_list):
         self.frame_predictor_optimizer.apply_gradients(zip(gradients, var_list))
         self.posterior_optimizer.apply_gradients(zip(gradients, var_list))
         self.encoder_optimizer.apply_gradients(zip(gradients, var_list))
         self.decoder_optimizer.apply_gradients(zip(gradients, var_list))
+        self.prior_optimizer.apply_gradients(zip(gradients, var_list))
 
     def update_prior(self, gradients, var_list):
         self.prior_optimizer.apply_gradients(zip(gradients, var_list))

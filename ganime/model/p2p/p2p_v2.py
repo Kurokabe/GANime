@@ -40,6 +40,65 @@ class KLCriterion(Loss):
         return kld
 
 
+class Decoder(Model):
+    def __init__(self, dim, nc=1):
+        super().__init__()
+        self.dim = dim
+        self.upc1 = Sequential(
+            [
+                TimeDistributed(
+                    Conv2DTranspose(512, kernel_size=4, strides=1, padding="valid")
+                ),
+                BatchNormalization(),
+                LeakyReLU(alpha=0.2),
+            ]
+        )
+        self.upc2 = Sequential(
+            [
+                TimeDistributed(
+                    Conv2DTranspose(256, kernel_size=4, strides=2, padding="same")
+                ),
+                BatchNormalization(),
+                LeakyReLU(alpha=0.2),
+            ]
+        )
+        self.upc3 = Sequential(
+            [
+                TimeDistributed(
+                    Conv2DTranspose(128, kernel_size=4, strides=2, padding="same")
+                ),
+                BatchNormalization(),
+                LeakyReLU(alpha=0.2),
+            ]
+        )
+        self.upc4 = Sequential(
+            [
+                TimeDistributed(
+                    Conv2DTranspose(64, kernel_size=4, strides=2, padding="same")
+                ),
+                BatchNormalization(),
+                LeakyReLU(alpha=0.2),
+            ]
+        )
+        self.upc5 = Sequential(
+            [
+                TimeDistributed(
+                    Conv2DTranspose(1, kernel_size=4, strides=2, padding="same")
+                ),
+                Activation("sigmoid"),
+            ]
+        )
+
+    def call(self, input):
+        vec, skip = input
+        d1 = self.upc1(tf.reshape(vec, (-1, 1, 1, 1, self.dim)))
+        d2 = self.upc2(tf.concat([d1, skip[3]], axis=-1))
+        d3 = self.upc3(tf.concat([d2, skip[2]], axis=-1))
+        d4 = self.upc4(tf.concat([d3, skip[1]], axis=-1))
+        output = self.upc5(tf.concat([d4, skip[0]], axis=-1))
+        return output
+
+
 class Sampling(Layer):
     """Uses (z_mean, z_log_var) to sample z, the vector encoding a digit."""
 
@@ -143,80 +202,78 @@ class P2P(Model):
 
         h = TimeDistributed(Conv2D(64, kernel_size=4, strides=2, padding="same"))(input)
         h = BatchNormalization()(h)
-        h = LeakyReLU(alpha=0.2)(h)
-        h = TimeDistributed(MaxPooling2D(pool_size=2, strides=2, padding="same"))(h)
+        h1 = LeakyReLU(alpha=0.2)(h)
+        # h = TimeDistributed(MaxPooling2D(pool_size=2, strides=2, padding="same"))(h)
 
-        h = TimeDistributed(Conv2D(128, kernel_size=4, strides=2, padding="same"))(h)
+        h = TimeDistributed(Conv2D(128, kernel_size=4, strides=2, padding="same"))(h1)
         h = BatchNormalization()(h)
-        h = LeakyReLU(alpha=0.2)(h)
-        h = TimeDistributed(MaxPooling2D(pool_size=2, strides=2, padding="same"))(h)
+        h2 = LeakyReLU(alpha=0.2)(h)
+        # h = TimeDistributed(MaxPooling2D(pool_size=2, strides=2, padding="same"))(h)
 
-        h = TimeDistributed(Conv2D(256, kernel_size=4, strides=2, padding="same"))(h)
+        h = TimeDistributed(Conv2D(256, kernel_size=4, strides=2, padding="same"))(h2)
         h = BatchNormalization()(h)
-        h = LeakyReLU(alpha=0.2)(h)
-        h = TimeDistributed(MaxPooling2D(pool_size=2, strides=2, padding="same"))(h)
+        h3 = LeakyReLU(alpha=0.2)(h)
+        # h = TimeDistributed(MaxPooling2D(pool_size=2, strides=2, padding="same"))(h)
 
-        h = TimeDistributed(Conv2D(512, kernel_size=4, strides=2, padding="same"))(h)
+        h = TimeDistributed(Conv2D(512, kernel_size=4, strides=2, padding="same"))(h3)
         h = BatchNormalization()(h)
-        h = LeakyReLU(alpha=0.2)(h)
-        h = TimeDistributed(MaxPooling2D(pool_size=2, strides=2, padding="same"))(h)
+        h4 = LeakyReLU(alpha=0.2)(h)
+        # h = TimeDistributed(MaxPooling2D(pool_size=2, strides=2, padding="same"))(h)
 
-        h = Flatten()(h)
-        output = Dense(self.g_dim)(h)
-        output = tf.expand_dims(output, axis=1)
-        return Model(inputs=input, outputs=output, name="encoder")
-        # mu = Dense(self.g_dim)(h)
-        # logvar = Dense(self.g_dim)(h)
+        h = TimeDistributed(
+            Conv2D(self.g_dim, kernel_size=4, strides=1, padding="valid")
+        )(h4)
+        h = BatchNormalization()(h)
+        h5 = Activation("tanh")(h)
 
-        # z = Sampling()([mu, logvar])
-
-        # mu, logvar, z = (
-        #     tf.expand_dims(mu, axis=1),
-        #     tf.expand_dims(logvar, axis=1),
-        #     tf.expand_dims(z, axis=1),
-        # )
-
-        # return Model(inputs=input, outputs=[mu, logvar, z], name="encoder")
+        output = tf.reshape(h5, (-1, 1, self.g_dim))
+        # h = Flatten()(h)
+        # output = Dense(self.g_dim)(h)
+        # output = tf.expand_dims(output, axis=1)
+        return Model(inputs=input, outputs=[output, [h1, h2, h3, h4]], name="encoder")
 
     def build_decoder(self):
-        latent_inputs = Input(
-            shape=(
-                1,
-                self.g_dim,
-            )
-        )
-        x = Dense(1 * 1 * 1 * 512, activation="relu")(latent_inputs)
-        x = Reshape((1, 1, 1, 512))(x)
-        x = TimeDistributed(
-            Conv2DTranspose(512, kernel_size=4, strides=1, padding="valid")
-        )(x)
-        x = BatchNormalization()(x)
-        x = LeakyReLU(alpha=0.2)(x)
+        return Decoder(self.g_dim)
 
-        x = TimeDistributed(
-            Conv2DTranspose(256, kernel_size=4, strides=2, padding="same")
-        )(x)
-        x = BatchNormalization()(x)
-        x = LeakyReLU(alpha=0.2)(x)
+    # def build_decoder(self):
+    #     latent_inputs = Input(
+    #         shape=(
+    #             1,
+    #             self.g_dim,
+    #         )
+    #     )
+    #     x = Dense(1 * 1 * 1 * 128, activation="relu")(latent_inputs)
+    #     x = Reshape((1, 1, 1, 128))(x)
+    #     x = TimeDistributed(
+    #         Conv2DTranspose(512, kernel_size=4, strides=1, padding="valid")
+    #     )(x)
+    #     x = BatchNormalization()(x)
+    #     x1 = LeakyReLU(alpha=0.2)(x)
 
-        x = TimeDistributed(
-            Conv2DTranspose(128, kernel_size=4, strides=2, padding="same")
-        )(x)
-        x = BatchNormalization()(x)
-        x = LeakyReLU(alpha=0.2)(x)
+    #     x = TimeDistributed(
+    #         Conv2DTranspose(256, kernel_size=4, strides=2, padding="same")
+    #     )(x1)
+    #     x = BatchNormalization()(x)
+    #     x2 = LeakyReLU(alpha=0.2)(x)
 
-        x = TimeDistributed(
-            Conv2DTranspose(64, kernel_size=4, strides=2, padding="same")
-        )(x)
-        x = BatchNormalization()(x)
-        x = LeakyReLU(alpha=0.2)(x)
+    #     x = TimeDistributed(
+    #         Conv2DTranspose(128, kernel_size=4, strides=2, padding="same")
+    #     )(x2)
+    #     x = BatchNormalization()(x)
+    #     x3 = LeakyReLU(alpha=0.2)(x)
 
-        x = TimeDistributed(
-            Conv2DTranspose(1, kernel_size=4, strides=2, padding="same")
-        )(x)
-        x = Activation("sigmoid")(x)
+    #     x = TimeDistributed(
+    #         Conv2DTranspose(64, kernel_size=4, strides=2, padding="same")
+    #     )(x3)
+    #     x = BatchNormalization()(x)
+    #     x4 = LeakyReLU(alpha=0.2)(x)
 
-        return Model(inputs=latent_inputs, outputs=x, name="decoder")
+    #     x = TimeDistributed(
+    #         Conv2DTranspose(1, kernel_size=4, strides=2, padding="same")
+    #     )(x4)
+    #     x5 = Activation("sigmoid")(x)
+
+    #     return Model(inputs=latent_inputs, outputs=x5, name="decoder")
 
     # endregion
 
@@ -238,10 +295,16 @@ class P2P(Model):
         previous_frame = first_frame
         generated = [first_frame]
 
-        z_last = self.encoder(last_frame)
+        z_last, _ = self.encoder(last_frame)
         for i in range(1, desired_length):
 
             z_prev = self.encoder(previous_frame)
+
+            if self.last_frame_skip or i == 1 or i < self.n_past:
+                z_prev, skip = z_prev
+            else:
+                z_prev = z_prev[0]
+
             prior_input = tf.concat([z_prev, z_last], axis=1)
 
             z_mean_prior, z_log_var_prior, z_prior = self.prior(prior_input)
@@ -251,7 +314,7 @@ class P2P(Model):
             )
             z_pred = self.frame_predictor(predictor_input)
 
-            current_frame = self.decoder(z_pred)
+            current_frame = self.decoder([z_pred, skip])
             generated.append(current_frame)
             previous_frame = current_frame
         return tf.concat(generated, axis=1)
@@ -271,11 +334,18 @@ class P2P(Model):
         cpc_loss = 0
 
         with tf.GradientTape(persistent=True) as tape:
-            z_last = self.encoder(last_frame)
+            z_last, _ = self.encoder(last_frame)
             for i in tqdm(range(1, desired_length)):
                 current_frame = y[:, i : i + 1, ...]
+
                 z_prev = self.encoder(previous_frame)
-                z_curr = self.encoder(current_frame)
+
+                if self.last_frame_skip or i <= self.n_past:
+                    z_prev, skip = z_prev
+                else:
+                    z_prev = z_prev[0]
+
+                z_curr, _ = self.encoder(current_frame)
 
                 prior_input = tf.concat([z_prev, z_last], axis=1)
                 posterior_input = tf.concat([z_curr, z_last], axis=1)
@@ -299,20 +369,21 @@ class P2P(Model):
                     )
                 ) * (1.0 / global_batch_size)
 
-                align_loss += tf.reduce_sum(self.align_loss(z_pred, z_curr)) * (
-                    1.0 / global_batch_size
-                )
+                if i > 1:
+                    align_loss += tf.reduce_sum(self.align_loss(z_pred, z_curr)) * (
+                        1.0 / global_batch_size
+                    )
 
                 if i == desired_length - 1:
                     h_pred_p = self.frame_predictor(
                         tf.concat([z_prev, tf.expand_dims(z_prior, axis=1)], axis=-1)
                     )
-                    x_pred_p = self.decoder(h_pred_p)
-                    cpc_loss += tf.reduce_sum(self.mse(x_pred_p, current_frame)) * (
+                    x_pred_p = self.decoder([h_pred_p, skip])
+                    cpc_loss = tf.reduce_sum(self.mse(x_pred_p, current_frame)) * (
                         1.0 / global_batch_size
                     )
 
-                prediction = self.decoder(z_pred)
+                prediction = self.decoder([z_pred, skip])
                 reconstruction_loss += tf.reduce_sum(
                     self.mse(prediction, current_frame)
                 ) * (1.0 / global_batch_size)

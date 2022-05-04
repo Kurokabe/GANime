@@ -21,6 +21,9 @@ from tensorflow.keras.layers import (
 )
 
 
+SEQ_LEN = 20
+
+
 class Sampling(Layer):
     """Uses (z_mean, z_log_var) to sample z, the vector encoding a digit."""
 
@@ -48,10 +51,9 @@ class P2P(Model):
         skip_prob: float = 0.1,
         n_past: int = 1,
         last_frame_skip: bool = False,
-        beta: float = 0.9,
-        weight_align: float = 0.0,
-        weight_cpc: float = 1000.0,
-        kl_beta=5.0,
+        beta: float = 0.0001,
+        weight_align: float = 0.1,
+        weight_cpc: float = 100,
     ):
         super().__init__()
         # Models parameters
@@ -70,7 +72,6 @@ class P2P(Model):
         self.beta = beta
         self.weight_align = weight_align
         self.weight_cpc = weight_cpc
-        self.kl_beta = kl_beta
 
         self.frame_predictor = self.build_lstm()
         self.prior = self.build_gaussian_lstm()
@@ -95,7 +96,7 @@ class P2P(Model):
 
     def build_gaussian_lstm(self):
 
-        input = Input(shape=(20, self.g_dim + self.g_dim + 1))
+        input = Input(shape=(20, self.g_dim))
         embed = TimeDistributed(Dense(self.rnn_size))(input)
         lstm = LSTM(self.rnn_size, return_sequences=True)(embed)
         mu = TimeDistributed(Dense(self.z_dim))(lstm)
@@ -111,35 +112,38 @@ class P2P(Model):
         h = TimeDistributed(Conv2D(64, kernel_size=4, strides=2, padding="same"))(input)
         h = BatchNormalization()(h)
         h = LeakyReLU(alpha=0.2)(h)
-        h = TimeDistributed(MaxPooling2D(pool_size=2, strides=2, padding="same"))(h)
+        # h = TimeDistributed(MaxPooling2D(pool_size=2, strides=2, padding="same"))(h)
 
         h = TimeDistributed(Conv2D(128, kernel_size=4, strides=2, padding="same"))(h)
         h = BatchNormalization()(h)
         h = LeakyReLU(alpha=0.2)(h)
-        h = TimeDistributed(MaxPooling2D(pool_size=2, strides=2, padding="same"))(h)
+        # h = TimeDistributed(MaxPooling2D(pool_size=2, strides=2, padding="same"))(h)
 
         h = TimeDistributed(Conv2D(256, kernel_size=4, strides=2, padding="same"))(h)
         h = BatchNormalization()(h)
         h = LeakyReLU(alpha=0.2)(h)
-        h = TimeDistributed(MaxPooling2D(pool_size=2, strides=2, padding="same"))(h)
+        # h = TimeDistributed(MaxPooling2D(pool_size=2, strides=2, padding="same"))(h)
 
         h = TimeDistributed(Conv2D(512, kernel_size=4, strides=2, padding="same"))(h)
         h = BatchNormalization()(h)
         h = LeakyReLU(alpha=0.2)(h)
-        h = TimeDistributed(MaxPooling2D(pool_size=2, strides=2, padding="same"))(h)
+        # h = TimeDistributed(MaxPooling2D(pool_size=2, strides=2, padding="same"))(h)
 
         h = Flatten()(h)
-        mu = Dense(self.g_dim)(h)
-        logvar = Dense(self.g_dim)(h)
+        # mu = Dense(self.g_dim)(h)
+        # logvar = Dense(self.g_dim)(h)
 
-        z = Sampling()([mu, logvar])
+        # z = Sampling()([mu, logvar])
+        lstm_input = Dense(self.g_dim * SEQ_LEN)(h)
+        lstm_input = Reshape((SEQ_LEN, self.g_dim))(lstm_input)
+        mu, logvar, z = self.posterior(lstm_input)
 
         return Model(inputs=input, outputs=[mu, logvar, z], name="encoder")
 
     def build_decoder(self):
-        latent_inputs = Input(shape=(self.g_dim,))
-        x = Dense(20 * 1 * 1 * 512, activation="relu")(latent_inputs)
-        x = Reshape((20, 1, 1, 512))(x)
+        latent_inputs = Input(shape=(SEQ_LEN, self.z_dim))
+        x = Dense(1 * 1 * 1 * 512, activation="relu")(latent_inputs)
+        x = Reshape((SEQ_LEN, 1, 1, 512))(x)
         x = TimeDistributed(
             Conv2DTranspose(512, kernel_size=4, strides=1, padding="valid")
         )(x)
@@ -181,11 +185,13 @@ class P2P(Model):
             self.kl_loss_tracker,
         ]
 
+    def call(self, inputs, training=None, mask=None):
+        z_mean, z_log_var, z = self.encoder(inputs)
+        pred = self.decoder(z)
+        return pred
+
     def train_step(self, data):
         x, y = data
-
-        with tf.GradientTape() as tape:
-            z_mean, z_log_var, z = self.encoder(x)
 
         with tf.GradientTape() as tape:
             z_mean, z_log_var, z = self.encoder(x)
@@ -198,7 +204,7 @@ class P2P(Model):
             )
             kl_loss = -0.5 * (1 + z_log_var - tf.square(z_mean) - tf.exp(z_log_var))
             kl_loss = tf.reduce_mean(tf.reduce_sum(kl_loss, axis=1))
-            total_loss = reconstruction_loss + self.kl_beta * kl_loss
+            total_loss = reconstruction_loss + self.beta * kl_loss
         grads = tape.gradient(total_loss, self.trainable_weights)
         self.optimizer.apply_gradients(zip(grads, self.trainable_weights))
         self.total_loss_tracker.update_state(total_loss)
