@@ -3,6 +3,14 @@ from matplotlib import animation
 from IPython.display import HTML
 
 
+def display_images(data, n_rows=3, n_cols=3):
+    figure, axs = plt.subplots(n_rows, n_cols, figsize=(12, 12))
+    axs = axs.flatten()
+    for img, ax in zip(data, axs):
+        ax.imshow(img)
+    return figure
+
+
 def display_videos(data, n_rows=3, n_cols=3):
     fig, axs = plt.subplots(nrows=n_rows, ncols=n_cols, squeeze=False)
     ims = []

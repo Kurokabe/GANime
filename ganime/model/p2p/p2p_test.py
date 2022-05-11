@@ -468,7 +468,7 @@ class P2P(Model):
         skip_count = 0
         probs = np.random.uniform(low=0, high=1, size=seq_len - 1)
 
-        with tf.GradientTape() as tape:
+        with tf.GradientTape(persistent=True) as tape:
             for i in tqdm(range(1, seq_len)):
                 if (
                     probs[i - 1] <= skip_prob
@@ -520,12 +520,7 @@ class P2P(Model):
                     x_pred_p = self.decoder([h_pred_p, skip])
                     cpc_loss = self.mse_criterion(x_pred_p, x_cp)
 
-                mse_loss += tf.reduce_mean(
-                    tf.reduce_sum(
-                        tf.keras.losses.binary_crossentropy(x_pred, x[:, i, ...]),
-                        axis=(1, 2),
-                    )
-                )  # self.mse_criterion(x_pred, x[:, i, ...])
+                mse_loss += self.mse_criterion(x_pred, x[:, i, ...])
                 kld_loss += self.kl_criterion((mu, logvar), (mu_p, logvar_p))
 
             # backward
@@ -533,10 +528,10 @@ class P2P(Model):
                 mse_loss
                 + kld_loss * self.beta
                 + align_loss * self.weight_align
-                + cpc_loss * self.weight_cpc
+                # + cpc_loss * self.weight_cpc
             )
 
-            # prior_loss = kld_loss + cpc_loss * self.weight_cpc
+            prior_loss = kld_loss + cpc_loss * self.weight_cpc
 
         var_list_frame_predictor = self.frame_predictor.trainable_variables
         var_list_posterior = self.posterior.trainable_variables
@@ -560,17 +555,17 @@ class P2P(Model):
             loss,
             var_list,
         )
-        # gradients_prior = tape.gradient(
-        #     prior_loss,
-        #     var_list_prior,
-        # )
+        gradients_prior = tape.gradient(
+            prior_loss,
+            var_list_prior,
+        )
 
         self.update_model(
             gradients,
             var_list,
         )
-        # self.update_prior(gradients_prior, var_list_prior)
-        # del tape
+        self.update_prior(gradients_prior, var_list_prior)
+        del tape
 
         self.total_loss_tracker.update_state(loss)
         self.kl_loss_tracker.update_state(kld_loss)
@@ -653,13 +648,13 @@ class P2P(Model):
             else:
                 h, _ = h
 
-            h_cpaw = tf.concat([h, global_z, time_until_cp, delta_time], axis=-1)
+            h_cpaw = tf.stop_gradient(tf.concat([h, global_z, time_until_cp, delta_time], axis=-1))
 
             if i < self.n_past:
                 h_target = self.encoder(inputs[:, i, ...])[0]
-                h_target_cpaw = tf.concat(
+                h_target_cpaw = tf.stop_gradient(tf.concat(
                     [h_target, global_z, time_until_cp, delta_time], axis=1
-                )
+                ))
 
                 zt, _, _ = self.posterior(h_target_cpaw)
                 zt_p, _, _ = self.prior(h_cpaw)
@@ -678,9 +673,9 @@ class P2P(Model):
             else:
                 if i < num_frames:
                     h_target = self.encoder(inputs[:, i, ...])[0]
-                    h_target_cpaw = tf.concat(
+                    h_target_cpaw = tf.stop_gradient(tf.concat(
                         [h_target, global_z, time_until_cp, delta_time], axis=-1
-                    )
+                    ))
                 else:
                     h_target_cpaw = h_cpaw
 
@@ -696,7 +691,7 @@ class P2P(Model):
                         tf.concat([h, zt_p, time_until_cp, delta_time], axis=-1)
                     )
 
-                x_in = self.decoder([h, skip])
+                x_in = tf.stop_gradient(self.decoder([h, skip]))
                 gen_seq.append(x_in)
 
         return tf.stack(gen_seq, axis=1)
@@ -706,7 +701,7 @@ class P2P(Model):
         self.posterior_optimizer.apply_gradients(zip(gradients, var_list))
         self.encoder_optimizer.apply_gradients(zip(gradients, var_list))
         self.decoder_optimizer.apply_gradients(zip(gradients, var_list))
-        self.prior_optimizer.apply_gradients(zip(gradients, var_list))
+        #self.prior_optimizer.apply_gradients(zip(gradients, var_list))
 
     def update_prior(self, gradients, var_list):
         self.prior_optimizer.apply_gradients(zip(gradients, var_list))
