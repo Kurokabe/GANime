@@ -9,7 +9,10 @@ def load_kny_images(
 ) -> Tuple[tf.data.Dataset, tf.data.Dataset, tuple]:
     import skvideo.io
 
-    data = skvideo.io.vread(os.path.join(dataset_path, "kny", "01.mp4"))
+    if os.path.exists(os.path.join(dataset_path, "kny", "kny_images.npy")):
+        data = np.load(os.path.join(dataset_path, "kny", "kny_images.npy"))
+    else:
+        data = skvideo.io.vread(os.path.join(dataset_path, "kny", "01.mp4"))
     np.random.shuffle(data)
 
     def _preprocess(sample):
@@ -20,14 +23,14 @@ def load_kny_images(
         return image, image
 
     train_dataset = (
-        tf.data.Dataset.from_tensor_slices(data[:10000])
+        tf.data.Dataset.from_tensor_slices(data[:5000])
         .map(_preprocess)
         .batch(batch_size)
         .prefetch(tf.data.AUTOTUNE)
         .shuffle(int(10e3))
     )
     test_dataset = (
-        tf.data.Dataset.from_tensor_slices(data[10000:11000])
+        tf.data.Dataset.from_tensor_slices(data[5000:6000])
         .map(_preprocess)
         .batch(batch_size)
         .prefetch(tf.data.AUTOTUNE)
