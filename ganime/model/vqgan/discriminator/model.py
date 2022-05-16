@@ -2,7 +2,7 @@ from typing import List
 import numpy as np
 import tensorflow as tf
 from tensorflow import keras
-from tensorflow.keras import Model
+from tensorflow.keras import Model, Sequential
 from tensorflow.keras import layers
 
 
@@ -28,7 +28,7 @@ class NLayerDiscriminator(Model):
                 layers.Conv2D(
                     filters * filters_mult,
                     kernel_size=kernel_size,
-                    stride=2,
+                    strides=2,
                     padding="same",
                     use_bias=False,
                 ),
@@ -41,16 +41,19 @@ class NLayerDiscriminator(Model):
             layers.Conv2D(
                 filters * filters_mult,
                 kernel_size=kernel_size,
-                stride=1,
+                strides=1,
                 padding="same",
                 use_bias=False,
             ),
             layers.BatchNormalization(),
-            layers.LeakyReLU(alpha=0.2),]
-        
-        sequence += [layers.Conv2D(1, kernel_size=kernel_size, stride=1, padding="same")]
+            layers.LeakyReLU(alpha=0.2),
+        ]
 
-        self.main = layers.Sequential(sequence)
+        sequence += [
+            layers.Conv2D(1, kernel_size=kernel_size, strides=1, padding="same")
+        ]
+
+        self.main = Sequential(sequence)
 
     def call(self, inputs, training=True, mask=None):
         return self.main(inputs)

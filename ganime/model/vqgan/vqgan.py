@@ -1,14 +1,33 @@
-from typing import List
+from typing import List, Literal
+
 import numpy as np
 import tensorflow as tf
+from ganime.model.vqgan.discriminator.model import NLayerDiscriminator
+from ganime.model.vqgan.losses.vqperceptual import VQLPIPSWithDiscriminator
 from tensorflow import keras
-from tensorflow.keras import Model
-from tensorflow.keras import layers
+from tensorflow.keras import Model, layers
+from tensorflow.keras.optimizers import Optimizer
 from tensorflow_addons.layers import GroupNormalization
-
 
 INPUT_SHAPE = (64, 64, 3)
 ENCODER_OUTPUT_SHAPE = (8, 8, 128)
+
+
+@tf.function
+def hinge_d_loss(logits_real, logits_fake):
+    loss_real = tf.reduce_mean(keras.activations.relu(1.0 - logits_real))
+    loss_fake = tf.reduce_mean(keras.activations.relu(1.0 + logits_fake))
+    d_loss = 0.5 * (loss_real + loss_fake)
+    return d_loss
+
+
+@tf.function
+def vanilla_d_loss(logits_real, logits_fake):
+    d_loss = 0.5 * (
+        tf.reduce_mean(keras.activations.softplus(-logits_real))
+        + tf.reduce_mean(keras.activations.softplus(logits_fake))
+    )
+    return d_loss
 
 
 class VQGAN(keras.Model):
@@ -19,10 +38,20 @@ class VQGAN(keras.Model):
         embedding_dim: int,
         beta: float = 0.25,
         z_channels: int = 128,  # 256,
+        codebook_weight: float = 1.0,
+        disc_num_layers: int = 3,
+        disc_factor: float = 1.0,
+        disc_iter_start: int = 0,
+        disc_conditional: bool = False,
+        disc_in_channels: int = 3,
+        disc_weight: float = 0.8,
+        disc_filters: int = 64,
+        disc_loss: Literal["hinge", "vanilla"] = "hinge",
         **kwargs,
     ):
         super().__init__(**kwargs)
         self.train_variance = train_variance
+        self.codebook_weight = codebook_weight
 
         self.encoder = Encoder()
         self.decoder = Decoder()
@@ -33,11 +62,38 @@ class VQGAN(keras.Model):
 
         self.vqvae = self.get_vqvae()
 
+        self.perceptual_loss = VQLPIPSWithDiscriminator(
+            reduction=tf.keras.losses.Reduction.NONE
+        )
+
+        self.discriminator = NLayerDiscriminator(
+            input_channels=disc_in_channels,
+            filters=disc_filters,
+            n_layers=disc_num_layers,
+        )
+        self.discriminator_iter_start = disc_iter_start
+
+        if disc_loss == "hinge":
+            self.disc_loss = hinge_d_loss
+        elif disc_loss == "vanilla":
+            self.disc_loss = vanilla_d_loss
+        else:
+            raise ValueError(f"Unknown GAN loss '{disc_loss}'.")
+
+        print(f"VQLPIPSWithDiscriminator running with {disc_loss} loss.")
+        self.disc_factor = disc_factor
+        self.discriminator_weight = disc_weight
+        self.disc_conditional = disc_conditional
+
         self.total_loss_tracker = keras.metrics.Mean(name="total_loss")
         self.reconstruction_loss_tracker = keras.metrics.Mean(
             name="reconstruction_loss"
         )
         self.vq_loss_tracker = keras.metrics.Mean(name="vq_loss")
+        self.disc_loss_tracker = keras.metrics.Mean(name="disc_loss")
+
+        self.gen_optimizer: Optimizer = None
+        self.disc_optimizer: Optimizer = None
 
     def get_vqvae(self):
         inputs = keras.Input(shape=INPUT_SHAPE)
@@ -58,32 +114,108 @@ class VQGAN(keras.Model):
     def call(self, inputs, training=True, mask=None):
         return self.vqvae(inputs)
 
+    def calculate_adaptive_weight(
+        self, nll_loss, g_loss, tape, trainable_vars, discriminator_weight
+    ):
+        nll_grads = tape.gradient(nll_loss, trainable_vars)[0]
+        g_grads = tape.gradient(g_loss, trainable_vars)[0]
+
+        d_weight = tf.norm(nll_grads) / (tf.norm(g_grads) + 1e-4)
+        d_weight = tf.stop_gradient(tf.clip_by_value(d_weight, 0.0, 1e4))
+        return d_weight * discriminator_weight
+
+    @tf.function
+    def adopt_weight(self, weight, global_step, threshold=0, value=0.0):
+        if global_step < threshold:
+            weight = value
+        return weight
+
+    def get_global_step(self, optimizer):
+        return optimizer.iterations
+
+    def compile(
+        self,
+        gen_optimizer,
+        disc_optimizer,
+    ):
+        super().compile()
+        self.gen_optimizer = gen_optimizer
+        self.disc_optimizer = disc_optimizer
+
     def train_step(self, data):
         x, y = data
 
+        # Autoencode
         with tf.GradientTape() as tape:
-            reconstructions = self(x, training=True)
+            with tf.GradientTape(persistent=True) as adaptive_tape:
+                reconstructions = self(x, training=True)
 
-            # Calculate the losses.
-            reconstruction_loss = (
-                tf.reduce_mean((y - reconstructions) ** 2) / self.train_variance
+                # Calculate the losses.
+                # reconstruction_loss = (
+                #     tf.reduce_mean((y - reconstructions) ** 2) / self.train_variance
+                # )
+
+                logits_fake = self.discriminator(reconstructions, training=False)
+
+                g_loss = -tf.reduce_mean(logits_fake)
+                nll_loss = self.perceptual_loss(y, reconstructions)
+
+            d_weight = self.calculate_adaptive_weight(
+                nll_loss,
+                g_loss,
+                adaptive_tape,
+                self.decoder.conv_out.trainable_variables,
+                self.discriminator_weight,
             )
-            total_loss = reconstruction_loss + sum(self.vqvae.losses)
+            del adaptive_tape
+
+            disc_factor = self.adopt_weight(
+                weight=self.disc_factor,
+                global_step=self.get_global_step(self.gen_optimizer),
+                threshold=self.discriminator_iter_start,
+            )
+
+            # total_loss = reconstruction_loss + sum(self.vqvae.losses)
+            total_loss = (
+                nll_loss
+                + d_weight * disc_factor * g_loss
+                # + self.codebook_weight * tf.reduce_mean(self.vqvae.losses)
+                + self.codebook_weight * sum(self.vqvae.losses)
+            )
 
         # Backpropagation.
         grads = tape.gradient(total_loss, self.vqvae.trainable_variables)
-        self.optimizer.apply_gradients(zip(grads, self.vqvae.trainable_variables))
+        self.gen_optimizer.apply_gradients(zip(grads, self.vqvae.trainable_variables))
+
+        # Discriminator
+        with tf.GradientTape() as disc_tape:
+            logits_real = self.discriminator(y, training=True)
+            logits_fake = self.discriminator(reconstructions, training=True)
+
+            disc_factor = self.adopt_weight(
+                weight=self.disc_factor,
+                global_step=self.get_global_step(self.disc_optimizer),
+                threshold=self.discriminator_iter_start,
+            )
+            d_loss = disc_factor * self.disc_loss(logits_real, logits_fake)
+
+        disc_grads = disc_tape.gradient(d_loss, self.discriminator.trainable_variables)
+        self.disc_optimizer.apply_gradients(
+            zip(disc_grads, self.discriminator.trainable_variables)
+        )
 
         # Loss tracking.
         self.total_loss_tracker.update_state(total_loss)
-        self.reconstruction_loss_tracker.update_state(reconstruction_loss)
+        self.reconstruction_loss_tracker.update_state(nll_loss)
         self.vq_loss_tracker.update_state(sum(self.vqvae.losses))
+        self.disc_loss_tracker.update_state(d_loss)
 
         # Log results.
         return {
             "loss": self.total_loss_tracker.result(),
             "reconstruction_loss": self.reconstruction_loss_tracker.result(),
             "vqvae_loss": self.vq_loss_tracker.result(),
+            "disc_loss": self.disc_loss_tracker.result(),
         }
 
 
@@ -501,7 +633,7 @@ class AttentionBlock(layers.Layer):
 
 
 class Downsample(layers.Layer):
-    def __init__(self, channels, with_conv):
+    def __init__(self, channels, with_conv=True):
         super().__init__()
         self.with_conv = with_conv
         if self.with_conv:
@@ -518,7 +650,7 @@ class Downsample(layers.Layer):
 
 
 class Upsample(layers.Layer):
-    def __init__(self, channels, with_conv):
+    def __init__(self, channels, with_conv=True):
         super().__init__()
         self.with_conv = with_conv
         if self.with_conv:

@@ -17,10 +17,10 @@ def normalize_tensor(x, eps=1e-10):
 
 
 class LPIPS(Loss):
-    def __init__(self, use_dropout=True):
-        super().__init__()
+    def __init__(self, use_dropout=True, **kwargs):
+        super().__init__(**kwargs)
 
-        self.scaling_layer = preprocess_input
+        self.scaling_layer = ScalingLayer()  # preprocess_input
         selected_layers = [
             "block1_conv2",
             "block2_conv2",
@@ -73,12 +73,8 @@ class LPIPS(Loss):
 
     def call(self, y_true, y_pred):
 
-        scaled_true = (y_true - tf.Variable([-0.030, -0.088, -0.188])) / tf.Variable(
-            [0.458, 0.448, 0.450]
-        )  # self.scaling_layer(y_true)
-        scaled_pred = (y_pred - tf.Variable([-0.030, -0.088, -0.188])) / tf.Variable(
-            [0.458, 0.448, 0.450]
-        )  # self.scaling_layer(y_pred)
+        scaled_true = self.scaling_layer(y_true)
+        scaled_pred = self.scaling_layer(y_pred)
 
         outputs_true, outputs_pred = self.model(scaled_true), self.model(scaled_pred)
         features_true, features_pred, diffs = {}, {}, {}
@@ -107,6 +103,16 @@ class LPIPS(Loss):
         #     rc_loss += K.sum(K.square(h1 - h2), axis=-1)
 
         # return rc_loss
+
+
+class ScalingLayer(layers.Layer):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.shift = tf.Variable([-0.030, -0.088, -0.188])
+        self.scale = tf.Variable([0.458, 0.448, 0.450])
+
+    def call(self, inputs):
+        return (inputs - self.shift) / self.scale
 
 
 class NetLinLayer(layers.Layer):
