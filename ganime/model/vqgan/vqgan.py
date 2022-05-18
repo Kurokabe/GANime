@@ -5,7 +5,7 @@ import tensorflow as tf
 from ganime.model.vqgan.discriminator.model import NLayerDiscriminator
 from ganime.model.vqgan.losses.vqperceptual import VQLPIPSWithDiscriminator
 from tensorflow import keras
-from tensorflow.keras import Model, layers
+from tensorflow.keras import Model, layers, Sequential
 from tensorflow.keras.optimizers import Optimizer
 from tensorflow_addons.layers import GroupNormalization
 
@@ -44,7 +44,7 @@ class VQGAN(keras.Model):
         disc_iter_start: int = 0,
         disc_conditional: bool = False,
         disc_in_channels: int = 3,
-        disc_weight: float = 0.8,
+        disc_weight: float = 0.3,
         disc_filters: int = 64,
         disc_loss: Literal["hinge", "vanilla"] = "hinge",
         **kwargs,
@@ -308,15 +308,14 @@ class Encoder(Model):
         current_resolution = resolution
 
         in_channels_multiplier = (1,) + tuple(channels_multiplier)
-        self.downsampling = []
+
+        self.downsampling_list = []
 
         for i_level in range(self.num_resolutions):
-            block = []
-            attentions = []
             block_in = channels * in_channels_multiplier[i_level]
             block_out = channels * channels_multiplier[i_level]
             for i_block in range(self.num_res_blocks):
-                block.append(
+                self.downsampling_list.append(
                     ResnetBlock(
                         in_channels=block_in,
                         out_channels=block_out,
@@ -328,14 +327,39 @@ class Encoder(Model):
 
                 if current_resolution in attention_resolution:
                     # attentions.append(layers.Attention())
-                    attentions.append(AttentionBlock(block_in))
+                    self.downsampling_list.append(AttentionBlock(block_in))
 
-            down = {}
-            down["block"] = block
-            down["attention"] = attentions
             if i_level != self.num_resolutions - 1:
-                down["downsample"] = Downsample(block_in, resamp_with_conv)
-            self.downsampling.append(down)
+                self.downsampling_list.append(Downsample(block_in, resamp_with_conv))
+
+        # self.downsampling = []
+
+        # for i_level in range(self.num_resolutions):
+        #     block = []
+        #     attentions = []
+        #     block_in = channels * in_channels_multiplier[i_level]
+        #     block_out = channels * channels_multiplier[i_level]
+        #     for i_block in range(self.num_res_blocks):
+        #         block.append(
+        #             ResnetBlock(
+        #                 in_channels=block_in,
+        #                 out_channels=block_out,
+        #                 timestep_embedding_channels=self.timestep_embeddings_channel,
+        #                 dropout=dropout,
+        #             )
+        #         )
+        #         block_in = block_out
+
+        #         if current_resolution in attention_resolution:
+        #             # attentions.append(layers.Attention())
+        #             attentions.append(AttentionBlock(block_in))
+
+        #     down = {}
+        #     down["block"] = block
+        #     down["attention"] = attentions
+        #     if i_level != self.num_resolutions - 1:
+        #         down["downsample"] = Downsample(block_in, resamp_with_conv)
+        #     self.downsampling.append(down)
 
         # middle
         self.mid = {}
@@ -368,17 +392,19 @@ class Encoder(Model):
         return model.summary()
 
     def call(self, inputs, training=True, mask=None):
-        hs = [self.conv_in(inputs)]
-        for i_level in range(self.num_resolutions):
-            for i_block in range(self.num_res_blocks):
-                h = self.downsampling[i_level]["block"][i_block](hs[-1])
-                if len(self.downsampling[i_level]["attention"]) > 0:
-                    h = self.downsampling[i_level]["attention"][i_block](h)
-                hs.append(h)
-            if i_level != self.num_resolutions - 1:
-                hs.append(self.downsampling[i_level]["downsample"](hs[-1]))
+        h = self.conv_in(inputs)
+        for downsampling in self.downsampling_list:
+            h = downsampling(h)
+        # for i_level in range(self.num_resolutions):
+        #     for i_block in range(self.num_res_blocks):
+        #         h = self.downsampling[i_level]["block"][i_block](hs[-1])
+        #         if len(self.downsampling[i_level]["attention"]) > 0:
+        #             h = self.downsampling[i_level]["attention"][i_block](h)
+        #         hs.append(h)
+        #     if i_level != self.num_resolutions - 1:
+        #         hs.append(self.downsampling[i_level]["downsample"](hs[-1]))
 
-        h = hs[-1]
+        # h = hs[-1]
         h = self.mid["block_1"](h)
         h = self.mid["attn_1"](h)
         h = self.mid["block_2"](h)
@@ -444,14 +470,13 @@ class Decoder(Model):
         )
 
         # upsampling
-        self.upsampling = []
+
+        self.upsampling_list = []
 
         for i_level in reversed(range(self.num_resolutions)):
-            block = []
-            attentions = []
             block_out = channels * channels_multiplier[i_level]
             for i_block in range(self.num_res_blocks + 1):
-                block.append(
+                self.upsampling_list.append(
                     ResnetBlock(
                         in_channels=block_in,
                         out_channels=block_out,
@@ -463,15 +488,41 @@ class Decoder(Model):
 
                 if current_resolution in attention_resolution:
                     # attentions.append(layers.Attention())
-                    attentions.append(AttentionBlock(block_in))
+                    self.upsampling_list.append(AttentionBlock(block_in))
 
-            upsampling = {}
-            upsampling["block"] = block
-            upsampling["attention"] = attentions
             if i_level != 0:
-                upsampling["upsample"] = Upsample(block_in, resamp_with_conv)
+                self.upsampling_list.append(Upsample(block_in, resamp_with_conv))
                 current_resolution *= 2
-            self.upsampling.insert(0, upsampling)
+            # self.upsampling.insert(0, upsampling)
+
+        # self.upsampling = []
+
+        # for i_level in reversed(range(self.num_resolutions)):
+        #     block = []
+        #     attentions = []
+        #     block_out = channels * channels_multiplier[i_level]
+        #     for i_block in range(self.num_res_blocks + 1):
+        #         block.append(
+        #             ResnetBlock(
+        #                 in_channels=block_in,
+        #                 out_channels=block_out,
+        #                 timestep_embedding_channels=self.timestep_embeddings_channel,
+        #                 dropout=dropout,
+        #             )
+        #         )
+        #         block_in = block_out
+
+        #         if current_resolution in attention_resolution:
+        #             # attentions.append(layers.Attention())
+        #             attentions.append(AttentionBlock(block_in))
+
+        #     upsampling = {}
+        #     upsampling["block"] = block
+        #     upsampling["attention"] = attentions
+        #     if i_level != 0:
+        #         upsampling["upsample"] = Upsample(block_in, resamp_with_conv)
+        #         current_resolution *= 2
+        #     self.upsampling.insert(0, upsampling)
 
         # end
         self.norm_out = GroupNormalization(groups=32, epsilon=1e-6)
@@ -490,8 +541,6 @@ class Decoder(Model):
 
     def call(self, inputs, training=True, mask=None):
 
-        self.laz_z_shape = inputs.shape
-
         h = self.conv_in(inputs)
 
         # middle
@@ -499,13 +548,16 @@ class Decoder(Model):
         h = self.mid["attn_1"](h)
         h = self.mid["block_2"](h)
 
-        for i_level in reversed(range(self.num_resolutions)):
-            for i_block in range(self.num_res_blocks + 1):
-                h = self.upsampling[i_level]["block"][i_block](h)
-                if len(self.upsampling[i_level]["attention"]) > 0:
-                    h = self.upsampling[i_level]["attention"][i_block](h)
-            if i_level != 0:
-                h = self.upsampling[i_level]["upsample"](h)
+        for upsampling in self.upsampling_list:
+            h = upsampling(h)
+
+        # for i_level in reversed(range(self.num_resolutions)):
+        #     for i_block in range(self.num_res_blocks + 1):
+        #         h = self.upsampling[i_level]["block"][i_block](h)
+        #         if len(self.upsampling[i_level]["attention"]) > 0:
+        #             h = self.upsampling[i_level]["attention"][i_block](h)
+        #     if i_level != 0:
+        #         h = self.upsampling[i_level]["upsample"](h)
 
         # end
         if self.give_pre_end:
@@ -650,15 +702,20 @@ class Downsample(layers.Layer):
 
 
 class Upsample(layers.Layer):
-    def __init__(self, channels, with_conv=True):
+    def __init__(self, channels, with_conv=False):
         super().__init__()
         self.with_conv = with_conv
-        if self.with_conv:
+        if False:  # self.with_conv:
             self.up_sample = layers.Conv2DTranspose(
                 channels, kernel_size=3, strides=2, padding="same"
             )
         else:
-            self.up_sample = layers.UpSampling2D(size=2, interpolation="nearest")
+            self.up_sample = Sequential(
+                [
+                    layers.UpSampling2D(size=2, interpolation="nearest"),
+                    layers.Conv2D(channels, kernel_size=3, strides=1, padding="same"),
+                ]
+            )
 
     def call(self, x):
         x = self.up_sample(x)

@@ -15,7 +15,7 @@ class NLayerDiscriminator(Model):
         super().__init__()
 
         kernel_size = 4
-        sequence = [
+        self.sequence = [
             layers.Conv2D(filters, kernel_size=kernel_size, padding="same"),
             layers.LeakyReLU(alpha=0.2),
         ]
@@ -24,11 +24,12 @@ class NLayerDiscriminator(Model):
         for n in range(1, n_layers):
             filters_mult = min(2**n, 8)
 
-            sequence += [
+            self.sequence += [
+                layers.AveragePooling2D(pool_size=2),
                 layers.Conv2D(
                     filters * filters_mult,
                     kernel_size=kernel_size,
-                    strides=2,
+                    strides=1,  # 2,
                     padding="same",
                     use_bias=False,
                 ),
@@ -37,7 +38,7 @@ class NLayerDiscriminator(Model):
             ]
 
         filters_mult = min(2**n_layers, 8)
-        sequence += [
+        self.sequence += [
             layers.Conv2D(
                 filters * filters_mult,
                 kernel_size=kernel_size,
@@ -49,11 +50,15 @@ class NLayerDiscriminator(Model):
             layers.LeakyReLU(alpha=0.2),
         ]
 
-        sequence += [
+        self.sequence += [
             layers.Conv2D(1, kernel_size=kernel_size, strides=1, padding="same")
         ]
 
-        self.main = Sequential(sequence)
+        # self.main = Sequential(sequence)
 
     def call(self, inputs, training=True, mask=None):
-        return self.main(inputs)
+        h = inputs
+        for seq in self.sequence:
+            h = seq(h)
+        return h
+        # return self.main(inputs)

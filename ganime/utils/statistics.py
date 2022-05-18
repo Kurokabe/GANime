@@ -1,10 +1,14 @@
 import numpy as np
 from tqdm.auto import tqdm
+import tensorflow as tf
 import tensorflow_datasets as tfds
 
 
 def dataset_statistics(ds):
-    ds_numpy = tfds.as_numpy(ds)
+    if isinstance(ds, tf.data.Dataset):
+        ds_numpy = tfds.as_numpy(ds)
+    elif isinstance(ds, tf.keras.utils.Sequence):
+        ds_numpy = ds
     data = []
 
     for da in tqdm(ds_numpy):
