@@ -2,14 +2,14 @@ from typing import List, Literal
 
 import numpy as np
 import tensorflow as tf
-from ganime.model.vqgan.discriminator.model import NLayerDiscriminator
-from ganime.model.vqgan.losses.vqperceptual import VQLPIPSWithDiscriminator
+from .discriminator.model import NLayerDiscriminator
+from .losses.vqperceptual import VQLPIPSWithDiscriminator
 from tensorflow import keras
 from tensorflow.keras import Model, layers, Sequential
 from tensorflow.keras.optimizers import Optimizer
 from tensorflow_addons.layers import GroupNormalization
 
-INPUT_SHAPE = (64, 64, 3)
+INPUT_SHAPE = (64, 128, 3)
 ENCODER_OUTPUT_SHAPE = (8, 8, 128)
 
 

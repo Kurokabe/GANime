@@ -6,7 +6,7 @@ from tensorflow import keras
 from tensorflow.keras import Model, layers
 from tensorflow.keras.losses import Loss
 
-from ganime.model.vqgan.losses.lpips import LPIPS
+from .lpips import LPIPS
 
 from ..discriminator.model import NLayerDiscriminator
 

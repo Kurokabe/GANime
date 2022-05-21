@@ -4,10 +4,11 @@ from IPython.display import HTML
 
 
 def display_images(data, n_rows=3, n_cols=3):
-    figure, axs = plt.subplots(n_rows, n_cols, figsize=(12, 12))
+    figure, axs = plt.subplots(n_rows, n_cols, figsize=(24, 12))
     axs = axs.flatten()
     for img, ax in zip(data, axs):
         ax.imshow(img)
+
     return figure
 
 

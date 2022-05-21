@@ -200,3 +200,4 @@ models/*
 *.avi
 *.out
 notebooks/model/p2p_v2/*
+logs/*
