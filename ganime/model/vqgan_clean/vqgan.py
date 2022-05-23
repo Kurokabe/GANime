@@ -81,7 +81,20 @@ class VQGAN(keras.Model):
         """
         super().__init__(**kwargs)
         self.train_variance = train_variance
+        self.num_embeddings = num_embeddings
+        self.embedding_dim = embedding_dim
         self.codebook_weight = codebook_weight
+        self.beta = beta
+        self.z_channels = z_channels
+        self.ae_channels = ae_channels
+        self.ae_channels_multiplier = ae_channels_multiplier
+        self.ae_num_res_blocks = ae_num_res_blocks
+        self.ae_attention_resolution = ae_attention_resolution
+        self.ae_resolution = ae_resolution
+        self.ae_dropout = ae_dropout
+        self.disc_num_layers = disc_num_layers
+        self.disc_filters = disc_filters
+        self.disc_loss_str = disc_loss
 
         # Create the encoder - quant_conv - vector quantizer - post quant_conv - decoder
         self.encoder = Encoder(
@@ -130,6 +143,47 @@ class VQGAN(keras.Model):
         self.gen_optimizer: Optimizer = None
         self.disc_optimizer: Optimizer = None
 
+    @property
+    def metrics(self):
+        # We list our `Metric` objects here so that `reset_states()` can be
+        # called automatically at the start of each epoch
+        # or at the start of `evaluate()`.
+        # If you don't implement this property, you have to call
+        # `reset_states()` yourself at the time of your choosing.
+        return [
+            self.total_loss_tracker,
+            self.reconstruction_loss_tracker,
+            self.vq_loss_tracker,
+            self.disc_loss_tracker,
+        ]
+
+    def get_config(self):
+        config = super().get_config()
+        config.update(
+            {
+                "train_variance": self.train_variance,
+                "num_embeddings": self.num_embeddings,
+                "embedding_dim": self.embedding_dim,
+                "beta": self.beta,
+                "z_channels": self.z_channels,
+                "codebook_weight": self.codebook_weight,
+                "ae_channels": self.ae_channels,
+                "ae_channels_multiplier": self.ae_channels_multiplier,
+                "ae_num_res_blocks": self.ae_num_res_blocks,
+                "ae_attention_resolution": self.ae_attention_resolution,
+                "ae_resolution": self.ae_resolution,
+                "ae_dropout": self.ae_dropout,
+                "disc_num_layers": self.disc_num_layers,
+                "disc_factor": self.disc_factor,
+                "disc_iter_start": self.discriminator_iter_start,
+                "disc_conditional": self.disc_conditional,
+                "disc_weight": self.discriminator_weight,
+                "disc_filters": self.disc_filters,
+                "disc_loss": self.disc_loss_str,
+            }
+        )
+        return config
+
     def _get_discriminator_loss(self, disc_loss):
         if disc_loss == "hinge":
             loss = hinge_d_loss
@@ -144,6 +198,8 @@ class VQGAN(keras.Model):
     def build(self, input_shape):
         # Defer the shape initialization
         self.vqvae = self.get_vqvae(input_shape)
+        self.discriminator.build(input_shape)
+        super().build(input_shape)
 
     def get_vqvae(self, input_shape):
         inputs = keras.Input(shape=input_shape[1:])
@@ -289,9 +345,4 @@ class VQGAN(keras.Model):
         self.disc_loss_tracker.update_state(d_loss)
 
         # Log results.
-        return {
-            "loss": self.total_loss_tracker.result(),
-            "reconstruction_loss": self.reconstruction_loss_tracker.result(),
-            "vqvae_loss": self.vq_loss_tracker.result(),
-            "disc_loss": self.disc_loss_tracker.result(),
-        }
+        return {m.name: m.result() for m in self.metrics}

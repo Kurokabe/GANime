@@ -8,6 +8,7 @@ from tensorflow.keras.losses import Loss
 from .lpips import LPIPS
 
 
+@tf.keras.utils.register_keras_serializable()
 class PerceptualLoss(Loss):
     def __init__(self, *, perceptual_weight: float = 1.0, **kwargs):
         """Perceptual loss based on the LPIPS metric.
@@ -18,6 +19,15 @@ class PerceptualLoss(Loss):
         super().__init__(**kwargs)
         self.perceptual_loss = LPIPS(reduction=tf.keras.losses.Reduction.NONE)
         self.perceptual_weight = perceptual_weight
+
+    def get_config(self):
+        config = super().get_config()
+        config.update(
+            {
+                "perceptual_weight": self.perceptual_weight,
+            }
+        )
+        return config
 
     def call(
         self,

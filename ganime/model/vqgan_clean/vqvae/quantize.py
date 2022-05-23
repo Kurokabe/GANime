@@ -2,14 +2,14 @@ import tensorflow as tf
 from tensorflow.keras import layers
 
 
+@tf.keras.utils.register_keras_serializable()
 class VectorQuantizer(layers.Layer):
     def __init__(self, num_embeddings, embedding_dim, beta=0.25, **kwargs):
         super().__init__(**kwargs)
         self.embedding_dim = embedding_dim
         self.num_embeddings = num_embeddings
-        self.beta = (
-            beta  # This parameter is best kept between [0.25, 2] as per the paper.
-        )
+        # This parameter is best kept between [0.25, 2] as per the paper.
+        self.beta = beta
 
         # Initialize the embeddings which we will quantize.
         w_init = tf.random_uniform_initializer()
@@ -20,6 +20,17 @@ class VectorQuantizer(layers.Layer):
             trainable=True,
             name="embeddings_vqvae",
         )
+
+    def get_config(self):
+        config = super().get_config()
+        config.update(
+            {
+                "embedding_dim": self.embedding_dim,
+                "num_embeddings": self.num_embeddings,
+                "beta": self.beta,
+            }
+        )
+        return config
 
     def call(self, x):
         # Calculate the input shape of the inputs and

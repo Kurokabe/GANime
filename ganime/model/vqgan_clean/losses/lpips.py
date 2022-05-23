@@ -16,10 +16,12 @@ def normalize_tensor(x, eps=1e-10):
     return x / (norm_factor + eps)
 
 
+@tf.keras.utils.register_keras_serializable()
 class LPIPS(Loss):
     def __init__(self, use_dropout=True, **kwargs):
         super().__init__(**kwargs)
 
+        self.use_dropout = use_dropout
         self.scaling_layer = ScalingLayer()  # preprocess_input
         selected_layers = [
             "block1_conv2",
@@ -40,6 +42,15 @@ class LPIPS(Loss):
         # TODO: here we use the pytorch weights of the linear layers, try without these layers, or without initializing the weights
         self(tf.zeros((1, 16, 16, 1)), tf.zeros((1, 16, 16, 1)))
         self.init_lin_layers()
+
+    def get_config(self):
+        config = super().get_config()
+        config.update(
+            {
+                "use_dropout": self.use_dropout,
+            }
+        )
+        return config
 
     def load_vgg16(self) -> Model:
         """Load a VGG16 model with the same weights as PyTorch

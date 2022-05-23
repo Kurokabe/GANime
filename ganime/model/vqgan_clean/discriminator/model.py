@@ -6,13 +6,17 @@ from tensorflow.keras import Model, Sequential
 from tensorflow.keras import layers
 
 
+@tf.keras.utils.register_keras_serializable()
 class NLayerDiscriminator(Model):
     """Defines a PatchGAN discriminator as in Pix2Pix
     --> see https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix/blob/master/models/networks.py
     """
 
-    def __init__(self, filters: int = 64, n_layers: int = 3):
-        super().__init__()
+    def __init__(self, filters: int = 64, n_layers: int = 3, **kwargs):
+        super().__init__(**kwargs)
+
+        self.filters = filters
+        self.n_layers = n_layers
 
         kernel_size = 4
         self.sequence = [
@@ -59,3 +63,13 @@ class NLayerDiscriminator(Model):
         for seq in self.sequence:
             h = seq(h)
         return h
+
+    def get_config(self):
+        config = super().get_config()
+        config.update(
+            {
+                "filters": self.filters,
+                "n_layers": self.n_layers,
+            }
+        )
+        return config
