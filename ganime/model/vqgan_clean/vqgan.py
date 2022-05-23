@@ -10,6 +10,12 @@ from .diffusion.decoder import Decoder
 from tensorflow import keras
 from tensorflow.keras import layers
 from tensorflow.keras.optimizers import Optimizer
+from ganime.configs.model_configs import (
+    VQVAEConfig,
+    AutoencoderConfig,
+    DiscriminatorConfig,
+    LossConfig,
+)
 
 
 @tf.function
@@ -33,103 +39,82 @@ class VQGAN(keras.Model):
     def __init__(
         self,
         train_variance: float,
-        num_embeddings: int,
-        embedding_dim: int,
-        beta: float = 0.25,
-        z_channels: int = 128,  # 256,
-        codebook_weight: float = 1.0,
-        ae_channels: int = 128,  # ae stands for autoencoder
-        ae_channels_multiplier: List[int] = [1, 1, 2, 2],
-        ae_num_res_blocks: int = 1,  # 2,
-        ae_attention_resolution: List[int] = [16],
-        ae_resolution: int = 128,  # 256,
-        ae_dropout=0.0,
-        disc_num_layers: int = 3,
-        disc_factor: float = 1.0,
-        disc_iter_start: int = 0,
-        disc_conditional: bool = False,
-        disc_weight: float = 0.3,
-        disc_filters: int = 64,
-        disc_loss: Literal["hinge", "vanilla"] = "hinge",
+        vqvae_config: VQVAEConfig,
+        autoencoder_config: AutoencoderConfig,
+        discriminator_config: DiscriminatorConfig,
+        loss_config: LossConfig,
         **kwargs,
     ):
         """Create a VQ-GAN model.
 
         Args:
             train_variance (float): The variance of the training dataset
-            num_embeddings (int): The number of embeddings of the VQ-VAE
-            embedding_dim (int): The dimension of the embeddings
-            beta (float, optional): The beta parameter used as a discount factor for the VQ-VAE loss. Defaults to 0.25.
-            z_channels (int, optional): The number of channels at the end of the Vector Quantizer. Defaults to 128.
-            codebook_weight (float, optional): The weight applied to the codebook loss. Defaults to 1.0.
-            ae_channels (int, optional): The number of channels for the first and last layer of the autoencoder. Defaults to 128.
-            ae_channels_multiplier (List[int], optional): The multiplier for each level of the autoencoder. Starts with `ae-channels` (128) then multiply it by `ae_channels_multiplier[0]` at the next layer and so on. Defaults to [1, 1, 2, 2].
-            ae_num_res_blocks (int, optional): The number of residual blocks for the autoencoder. Defaults to 1.
-            ae_attention_resolution (List[int], optional): List indicating at which resolution an attention block will be put. Defaults to [16].
-            ae_resolution (int, optional): The starting resolution of the image. Defaults to 128.
-            ae_dropout (float, optional): The dropout value of the resnet blocks. Defaults to 0.0.
-            disc_num_layers (int, optional): The number of layer for the discriminator. Defaults to 3.
-            disc_factor (float, optional): The factor for the discriminator. Defaults to 1.0.
-            disc_iter_start (int, optional): The number of steps when the discriminator will start training. Defaults to 0.
-            disc_conditional (bool, optional): Whether the VQ-GAN is conditioned or not. Defaults to False.
-            disc_weight (float, optional): The weight of the discriminator loss. Defaults to 0.3.
-            disc_filters (int, optional): The starting number of filters for the discriminator. Defaults to 64.
-            disc_loss (Literal[&quot;hinge&quot;, &quot;vanilla&quot;], optional): The type of discriminator loss. Defaults to "hinge".
+            vqvae (VQVAEConfig): The configuration of the VQ-VAE
+            autoencoder (AutoencoderConfig): The configuration of the autoencoder
+            discriminator (DiscriminatorConfig): The configuration of the discriminator
+            loss_config (LossConfig): The configuration of the loss
 
         Raises:
             ValueError: The specified loss type is not supported.
         """
         super().__init__(**kwargs)
         self.train_variance = train_variance
-        self.num_embeddings = num_embeddings
-        self.embedding_dim = embedding_dim
-        self.codebook_weight = codebook_weight
-        self.beta = beta
-        self.z_channels = z_channels
-        self.ae_channels = ae_channels
-        self.ae_channels_multiplier = ae_channels_multiplier
-        self.ae_num_res_blocks = ae_num_res_blocks
-        self.ae_attention_resolution = ae_attention_resolution
-        self.ae_resolution = ae_resolution
-        self.ae_dropout = ae_dropout
-        self.disc_num_layers = disc_num_layers
-        self.disc_filters = disc_filters
-        self.disc_loss_str = disc_loss
+        self.codebook_weight = loss_config.vqvae.codebook_weight
+        # self.num_embeddings = num_embeddings
+        # self.embedding_dim = embedding_dim
+        # self.codebook_weight = codebook_weight
+        # self.beta = beta
+        # self.z_channels = z_channels
+        # self.ae_channels = ae_channels
+        # self.ae_channels_multiplier = ae_channels_multiplier
+        # self.ae_num_res_blocks = ae_num_res_blocks
+        # self.ae_attention_resolution = ae_attention_resolution
+        # self.ae_resolution = ae_resolution
+        # self.ae_dropout = ae_dropout
+        # self.disc_num_layers = disc_num_layers
+        # self.disc_filters = disc_filters
+        # self.disc_loss_str = disc_loss
 
         # Create the encoder - quant_conv - vector quantizer - post quant_conv - decoder
         self.encoder = Encoder(
-            channels=ae_channels,
-            channels_multiplier=ae_channels_multiplier,
-            num_res_blocks=ae_num_res_blocks,
-            attention_resolution=ae_attention_resolution,
-            resolution=ae_resolution,
-            dropout=ae_dropout,
+            channels=autoencoder_config.channels,
+            channels_multiplier=autoencoder_config.channels_multiplier,
+            num_res_blocks=autoencoder_config.num_res_blocks,
+            attention_resolution=autoencoder_config.attention_resolution,
+            resolution=autoencoder_config.resolution,
+            dropout=autoencoder_config.dropout,
         )
         self.decoder = Decoder(
-            channels=ae_channels,
-            channels_multiplier=ae_channels_multiplier,
-            num_res_blocks=ae_num_res_blocks,
-            attention_resolution=ae_attention_resolution,
-            resolution=ae_resolution,
-            dropout=ae_dropout,
+            channels=autoencoder_config.channels,
+            channels_multiplier=autoencoder_config.channels_multiplier,
+            num_res_blocks=autoencoder_config.num_res_blocks,
+            attention_resolution=autoencoder_config.attention_resolution,
+            resolution=autoencoder_config.resolution,
+            dropout=autoencoder_config.dropout,
         )
-        self.quantize = VectorQuantizer(num_embeddings, embedding_dim, beta=beta)
+        self.quantize = VectorQuantizer(
+            vqvae_config.num_embeddings,
+            vqvae_config.embedding_dim,
+            beta=vqvae_config.beta,
+        )
 
-        self.quant_conv = layers.Conv2D(embedding_dim, kernel_size=1)
-        self.post_quant_conv = layers.Conv2D(z_channels, kernel_size=1)
+        self.quant_conv = layers.Conv2D(vqvae_config.embedding_dim, kernel_size=1)
+        self.post_quant_conv = layers.Conv2D(
+            autoencoder_config.z_channels, kernel_size=1
+        )
 
         self.perceptual_loss = PerceptualLoss(reduction=tf.keras.losses.Reduction.NONE)
 
         # Setup discriminator and params
         self.discriminator = NLayerDiscriminator(
-            filters=disc_filters,
-            n_layers=disc_num_layers,
+            filters=discriminator_config.filters,
+            n_layers=discriminator_config.num_layers,
         )
-        self.discriminator_iter_start = disc_iter_start
-        self.disc_loss = self._get_discriminator_loss(disc_loss)
-        self.disc_factor = disc_factor
-        self.discriminator_weight = disc_weight
-        self.disc_conditional = disc_conditional
+        self.discriminator_iter_start = loss_config.discriminator.iter_start
+        self.disc_loss = self._get_discriminator_loss(loss_config.discriminator.loss)
+        self.disc_factor = loss_config.discriminator.factor
+        self.discriminator_weight = loss_config.discriminator.weight
+        # self.disc_conditional = disc_conditional
 
         # Setup loss trackers
         self.total_loss_tracker = keras.metrics.Mean(name="total_loss")
@@ -157,32 +142,32 @@ class VQGAN(keras.Model):
             self.disc_loss_tracker,
         ]
 
-    def get_config(self):
-        config = super().get_config()
-        config.update(
-            {
-                "train_variance": self.train_variance,
-                "num_embeddings": self.num_embeddings,
-                "embedding_dim": self.embedding_dim,
-                "beta": self.beta,
-                "z_channels": self.z_channels,
-                "codebook_weight": self.codebook_weight,
-                "ae_channels": self.ae_channels,
-                "ae_channels_multiplier": self.ae_channels_multiplier,
-                "ae_num_res_blocks": self.ae_num_res_blocks,
-                "ae_attention_resolution": self.ae_attention_resolution,
-                "ae_resolution": self.ae_resolution,
-                "ae_dropout": self.ae_dropout,
-                "disc_num_layers": self.disc_num_layers,
-                "disc_factor": self.disc_factor,
-                "disc_iter_start": self.discriminator_iter_start,
-                "disc_conditional": self.disc_conditional,
-                "disc_weight": self.discriminator_weight,
-                "disc_filters": self.disc_filters,
-                "disc_loss": self.disc_loss_str,
-            }
-        )
-        return config
+    # def get_config(self):
+    #     config = super().get_config()
+    #     config.update(
+    #         {
+    #             "train_variance": self.train_variance,
+    #             "num_embeddings": self.num_embeddings,
+    #             "embedding_dim": self.embedding_dim,
+    #             "beta": self.beta,
+    #             "z_channels": self.z_channels,
+    #             "codebook_weight": self.codebook_weight,
+    #             "ae_channels": self.ae_channels,
+    #             "ae_channels_multiplier": self.ae_channels_multiplier,
+    #             "ae_num_res_blocks": self.ae_num_res_blocks,
+    #             "ae_attention_resolution": self.ae_attention_resolution,
+    #             "ae_resolution": self.ae_resolution,
+    #             "ae_dropout": self.ae_dropout,
+    #             "disc_num_layers": self.disc_num_layers,
+    #             "disc_factor": self.disc_factor,
+    #             "disc_iter_start": self.discriminator_iter_start,
+    #             "disc_conditional": self.disc_conditional,
+    #             "disc_weight": self.discriminator_weight,
+    #             "disc_filters": self.disc_filters,
+    #             "disc_loss": self.disc_loss_str,
+    #         }
+    #     )
+    #     return config
 
     def _get_discriminator_loss(self, disc_loss):
         if disc_loss == "hinge":
