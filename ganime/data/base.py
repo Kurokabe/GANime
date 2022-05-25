@@ -2,6 +2,59 @@ from typing import Tuple
 import numpy as np
 import tensorflow as tf
 import os
+from tensorflow.keras.utils import Sequence
+from abc import ABC, abstractmethod
+from typing import Literal
+import math
+
+
+class SequenceDataset(Sequence):
+    def __init__(
+        self,
+        dataset_path: str,
+        batch_size: int,
+        split: Literal["train", "validation", "test"] = "train",
+    ):
+        self.batch_size = batch_size
+        self.split = split
+        self.data = self.load_data(dataset_path, split)
+        self.data = self.preprocess_data(self.data)
+
+        self.indices = np.arange(self.data.shape[0])
+        self.on_epoch_end()
+
+    @abstractmethod
+    def load_data(self, dataset_path: str, split: str) -> np.ndarray:
+        pass
+
+    def preprocess_data(self, data: np.ndarray) -> np.ndarray:
+        return data
+
+    def __len__(self):
+        return math.ceil(len(self.data) / self.batch_size)
+
+    def __getitem__(self, idx):
+        inds = self.indices[idx * self.batch_size : (idx + 1) * self.batch_size]
+        batch_x = self.data[inds]
+        batch_y = batch_x
+
+        return batch_x, batch_y
+
+    def get_fixed_batch(self, idx):
+        self.fixed_indices = (
+            self.fixed_indices
+            if hasattr(self, "fixed_indices")
+            else self.indices[
+                idx * self.batch_size : (idx + 1) * self.batch_size
+            ].copy()
+        )
+        batch_x = self.data[self.fixed_indices]
+        batch_y = batch_x
+
+        return batch_x, batch_y
+
+    def on_epoch_end(self):
+        np.random.shuffle(self.indices)
 
 
 def load_kny_images(
