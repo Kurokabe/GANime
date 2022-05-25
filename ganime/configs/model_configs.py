@@ -3,6 +3,17 @@ from typing import List, Literal
 
 
 @dataclass
+class GPTConfig:
+    n_layer: int
+    n_head: int
+    n_embedding: int
+    vocab_size: int
+    block_size: int
+    embedding_percentage_drop: float
+    attention_percentage_drop: float
+
+
+@dataclass
 class VQVAEConfig:
     beta: float
     num_embeddings: int
