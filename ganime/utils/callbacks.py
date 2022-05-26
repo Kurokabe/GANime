@@ -5,8 +5,8 @@ from typing import Optional
 
 import matplotlib.pyplot as plt
 import tensorflow as tf
+from ganime.data.base import SequenceDataset
 from ganime.visualization.images import display_true_pred
-from tensorflow import keras
 
 
 def get_logdir(parent_folder: str, experiment_name: Optional[str] = None) -> str:
@@ -44,14 +44,14 @@ def plot_to_image(figure):
     return image
 
 
-class TensorBoardImage(tf.keras.callbacks.Callback):
+class TensorboardImage(tf.keras.callbacks.Callback):
     def __init__(
         self,
         logdir: str,
-        train: keras.utils.Sequence,
-        validation: keras.utils.Sequence = None,
+        train: SequenceDataset,
+        validation: SequenceDataset = None,
     ):
-        super(TensorBoardImage, self).__init__()
+        super().__init__()
         self.logdir = logdir
         self.train = train
         self.validation = validation

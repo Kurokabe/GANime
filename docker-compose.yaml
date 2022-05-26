@@ -1,0 +1,20 @@
+#version: "3.3"
+
+services:
+  jupyter:
+    # you can change this to whatever you want.
+    container_name: ganime
+    build:
+      context: ./
+      dockerfile: ./Dockerfile
+    volumes:
+      - "./:/GANime"
+    ports:
+      - "8888:8888"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [ gpu ]

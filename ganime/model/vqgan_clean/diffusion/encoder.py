@@ -6,18 +6,18 @@ from tensorflow_addons.layers import GroupNormalization
 from .layers import ResnetBlock, AttentionBlock, Downsample
 
 
-@tf.keras.utils.register_keras_serializable()
+# @tf.keras.utils.register_keras_serializable()
 class Encoder(layers.Layer):
     def __init__(
         self,
         *,
-        channels: int = 128,
-        channels_multiplier: List[int] = [1, 1, 2, 2],  # [1, 1, 2, 2, 4],
-        num_res_blocks: int = 1,  # 2,
-        attention_resolution: List[int] = [16],
-        resolution: int = 64,  # 256,
-        z_channels=128,  # 256,
-        dropout=0.0,
+        channels: int,
+        channels_multiplier: List[int],
+        num_res_blocks: int,
+        attention_resolution: List[int],
+        resolution: int,
+        z_channels: int,
+        dropout: float,
         **kwargs
     ):
         """Encode an image into a latent vector. The encoder will be constitued of multiple levels (lenght of `channels_multiplier`) with for each level `num_res_blocks` ResnetBlock.
@@ -96,20 +96,20 @@ class Encoder(layers.Layer):
             padding="same",
         )
 
-    def get_config(self):
-        config = super().get_config()
-        config.update(
-            {
-                "channels": self.channels,
-                "channels_multiplier": self.channels_multiplier,
-                "num_res_blocks": self.num_res_blocks,
-                "attention_resolution": self.attention_resolution,
-                "resolution": self.resolution,
-                "z_channels": self.z_channels,
-                "dropout": self.dropout,
-            }
-        )
-        return config
+    # def get_config(self):
+    #     config = super().get_config()
+    #     config.update(
+    #         {
+    #             "channels": self.channels,
+    #             "channels_multiplier": self.channels_multiplier,
+    #             "num_res_blocks": self.num_res_blocks,
+    #             "attention_resolution": self.attention_resolution,
+    #             "resolution": self.resolution,
+    #             "z_channels": self.z_channels,
+    #             "dropout": self.dropout,
+    #         }
+    #     )
+    #     return config
 
     def call(self, inputs, training=True, mask=None):
         h = self.conv_in(inputs)

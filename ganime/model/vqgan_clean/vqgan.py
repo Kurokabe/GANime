@@ -60,6 +60,10 @@ class VQGAN(keras.Model):
         super().__init__(**kwargs)
         self.train_variance = train_variance
         self.codebook_weight = loss_config.vqvae.codebook_weight
+        self.vqvae_config = vqvae_config
+        self.autoencoder_config = autoencoder_config
+        self.discriminator_config = discriminator_config
+        self.loss_config = loss_config
         # self.num_embeddings = num_embeddings
         # self.embedding_dim = embedding_dim
         # self.codebook_weight = codebook_weight
@@ -77,20 +81,22 @@ class VQGAN(keras.Model):
 
         # Create the encoder - quant_conv - vector quantizer - post quant_conv - decoder
         self.encoder = Encoder(
-            channels=autoencoder_config.channels,
-            channels_multiplier=autoencoder_config.channels_multiplier,
-            num_res_blocks=autoencoder_config.num_res_blocks,
-            attention_resolution=autoencoder_config.attention_resolution,
-            resolution=autoencoder_config.resolution,
-            dropout=autoencoder_config.dropout,
+            **autoencoder_config
+            # channels=autoencoder_config.channels,
+            # channels_multiplier=autoencoder_config.channels_multiplier,
+            # num_res_blocks=autoencoder_config.num_res_blocks,
+            # attention_resolution=autoencoder_config.attention_resolution,
+            # resolution=autoencoder_config.resolution,
+            # dropout=autoencoder_config.dropout,
         )
         self.decoder = Decoder(
-            channels=autoencoder_config.channels,
-            channels_multiplier=autoencoder_config.channels_multiplier,
-            num_res_blocks=autoencoder_config.num_res_blocks,
-            attention_resolution=autoencoder_config.attention_resolution,
-            resolution=autoencoder_config.resolution,
-            dropout=autoencoder_config.dropout,
+            **autoencoder_config
+            # channels=autoencoder_config.channels,
+            # channels_multiplier=autoencoder_config.channels_multiplier,
+            # num_res_blocks=autoencoder_config.num_res_blocks,
+            # attention_resolution=autoencoder_config.attention_resolution,
+            # resolution=autoencoder_config.resolution,
+            # dropout=autoencoder_config.dropout,
         )
         self.quantize = VectorQuantizer(
             vqvae_config.num_embeddings,
@@ -147,24 +153,10 @@ class VQGAN(keras.Model):
     #     config.update(
     #         {
     #             "train_variance": self.train_variance,
-    #             "num_embeddings": self.num_embeddings,
-    #             "embedding_dim": self.embedding_dim,
-    #             "beta": self.beta,
-    #             "z_channels": self.z_channels,
-    #             "codebook_weight": self.codebook_weight,
-    #             "ae_channels": self.ae_channels,
-    #             "ae_channels_multiplier": self.ae_channels_multiplier,
-    #             "ae_num_res_blocks": self.ae_num_res_blocks,
-    #             "ae_attention_resolution": self.ae_attention_resolution,
-    #             "ae_resolution": self.ae_resolution,
-    #             "ae_dropout": self.ae_dropout,
-    #             "disc_num_layers": self.disc_num_layers,
-    #             "disc_factor": self.disc_factor,
-    #             "disc_iter_start": self.discriminator_iter_start,
-    #             "disc_conditional": self.disc_conditional,
-    #             "disc_weight": self.discriminator_weight,
-    #             "disc_filters": self.disc_filters,
-    #             "disc_loss": self.disc_loss_str,
+    #             "vqvae_config": self.vqvae_config,
+    #             # "autoencoder_config": self.autoencoder_config,
+    #             "discriminator_config": self.discriminator_config,
+    #             "loss_config": self.loss_config,
     #         }
     #     )
     #     return config
@@ -322,6 +314,62 @@ class VQGAN(keras.Model):
         self.disc_optimizer.apply_gradients(
             zip(disc_grads, self.discriminator.trainable_variables)
         )
+
+        # Loss tracking.
+        self.total_loss_tracker.update_state(total_loss)
+        self.reconstruction_loss_tracker.update_state(nll_loss)
+        self.vq_loss_tracker.update_state(sum(self.vqvae.losses))
+        self.disc_loss_tracker.update_state(d_loss)
+
+        # Log results.
+        return {m.name: m.result() for m in self.metrics}
+
+    def test_step(self, data: Tuple[tf.Tensor, tf.Tensor]):
+        x, y = data
+
+        # Train the generator
+        with tf.GradientTape(
+            persistent=True
+        ) as adaptive_tape:  # Gradient tape for the adaptive weights
+            reconstructions = self(x, training=False)
+
+            logits_fake = self.discriminator(reconstructions, training=False)
+
+            g_loss = -tf.reduce_mean(logits_fake)
+            nll_loss = self.perceptual_loss(y, reconstructions)
+
+        d_weight = self.calculate_adaptive_weight(
+            nll_loss,
+            g_loss,
+            adaptive_tape,
+            self.decoder.conv_out.trainable_variables,
+            self.discriminator_weight,
+        )
+        del adaptive_tape  # Since persistent tape, important to delete it
+
+        disc_factor = self.adapt_weight(
+            weight=self.disc_factor,
+            global_step=self._get_global_step(self.gen_optimizer),
+            threshold=self.discriminator_iter_start,
+        )
+
+        total_loss = (
+            nll_loss
+            + d_weight * disc_factor * g_loss
+            # + self.codebook_weight * tf.reduce_mean(self.vqvae.losses)
+            + self.codebook_weight * sum(self.vqvae.losses)
+        )
+
+        # Discriminator
+        logits_real = self.discriminator(y, training=False)
+        logits_fake = self.discriminator(reconstructions, training=False)
+
+        disc_factor = self.adapt_weight(
+            weight=self.disc_factor,
+            global_step=self._get_global_step(self.disc_optimizer),
+            threshold=self.discriminator_iter_start,
+        )
+        d_loss = disc_factor * self.disc_loss(logits_real, logits_fake)
 
         # Loss tracking.
         self.total_loss_tracker.update_state(total_loss)
