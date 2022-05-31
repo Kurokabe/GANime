@@ -109,12 +109,13 @@ class AttentionBlock(layers.Layer):
         v = self.v(h_)
 
         # compute attention
-        (
-            b,
-            h,
-            w,
-            c,
-        ) = q.shape
+        (b, h, w, c,) = (
+            tf.shape(q)[0],
+            tf.shape(q)[1],
+            tf.shape(q)[2],
+            tf.shape(q)[3],
+        )
+
         if b is None:
             b = -1
         q = tf.reshape(q, [b, h * w, c])

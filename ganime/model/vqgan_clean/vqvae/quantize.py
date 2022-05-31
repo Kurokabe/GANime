@@ -56,7 +56,7 @@ class VectorQuantizer(layers.Layer):
 
         # Straight-through estimator.
         quantized = x + tf.stop_gradient(quantized - x)
-        return quantized
+        return quantized, encoding_indices
 
     def get_code_indices(self, flattened_inputs):
         # Calculate L2-normalized distance between the inputs and the codes.
@@ -70,3 +70,9 @@ class VectorQuantizer(layers.Layer):
         # Derive the indices for minimum distances.
         encoding_indices = tf.argmin(distances, axis=1)
         return encoding_indices
+
+    def get_codebook_entry(self, indices, shape):
+        encodings = tf.one_hot(indices, self.num_embeddings)
+        quantized = tf.matmul(encodings, self.embeddings, transpose_b=True)
+        quantized = tf.reshape(quantized, shape)
+        return quantized

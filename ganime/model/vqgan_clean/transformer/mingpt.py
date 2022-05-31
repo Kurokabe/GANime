@@ -100,12 +100,12 @@ class TokenAndPositionEmbedding(layers.Layer):
         self.pos_emb = layers.Embedding(input_dim=block_size, output_dim=n_embedding)
         self.dropout = layers.Dropout(embedding_percentage_drop)
 
-    def call(self, x):
+    def call(self, x, training=None, mask=None):
         maxlen = tf.shape(x)[-1]
         positions = tf.range(start=0, limit=maxlen, delta=1)
         positions = self.pos_emb(positions)
         x = self.token_emb(x)
-        return self.dropout(x + positions)
+        return self.dropout(x + positions, training=training)
 
 
 class GPT(Model):
@@ -138,19 +138,19 @@ class GPT(Model):
         self.layer_norm = layers.LayerNormalization(epsilon=1e-6)
         self.outputs = layers.Dense(vocab_size)
 
-        loss_fn = tf.keras.losses.CategoricalCrossentropy(from_logits=True)
-        self.compile(
-            "adam",
-            loss=[loss_fn, None],
-        )  # No loss and optimization based on word embeddings from transformer block
+        # loss_fn = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
+        # self.compile(
+        #     "adam",
+        #     loss=loss_fn,
+        # )  # No loss and optimization based on word embeddings from transformer block
 
     # def build(self, input_shape):
     #     self.input_shape = input_shape
 
-    # def summary(self):
-    #     x = layers.Input(shape=self.input_shape[1:])
-    #     model = Model(inputs=[x], outputs=self.call(x))
-    #     return model.summary()
+    def summary(self):
+        x = layers.Input(shape=self.input_shape[1:])
+        model = Model(inputs=[x], outputs=self.call(x))
+        return model.summary()
 
     def build_graph(self, raw_shape):
         x = tf.keras.layers.Input(shape=(raw_shape), ragged=True)

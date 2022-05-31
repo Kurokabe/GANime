@@ -1,4 +1,4 @@
-from typing import List, Literal, Tuple
+from typing import List, Literal, Optional, Tuple
 
 import numpy as np
 import tensorflow as tf
@@ -38,17 +38,16 @@ def vanilla_d_loss(logits_real, logits_fake):
 class VQGAN(keras.Model):
     def __init__(
         self,
-        train_variance: float,
         vqvae_config: VQVAEConfig,
         autoencoder_config: AutoencoderConfig,
         discriminator_config: DiscriminatorConfig,
         loss_config: LossConfig,
+        checkpoint_path: Optional[str] = None,
         **kwargs,
     ):
         """Create a VQ-GAN model.
 
         Args:
-            train_variance (float): The variance of the training dataset
             vqvae (VQVAEConfig): The configuration of the VQ-VAE
             autoencoder (AutoencoderConfig): The configuration of the autoencoder
             discriminator (DiscriminatorConfig): The configuration of the discriminator
@@ -58,7 +57,6 @@ class VQGAN(keras.Model):
             ValueError: The specified loss type is not supported.
         """
         super().__init__(**kwargs)
-        self.train_variance = train_variance
         self.codebook_weight = loss_config.vqvae.codebook_weight
         self.vqvae_config = vqvae_config
         self.autoencoder_config = autoencoder_config
@@ -80,34 +78,23 @@ class VQGAN(keras.Model):
         # self.disc_loss_str = disc_loss
 
         # Create the encoder - quant_conv - vector quantizer - post quant_conv - decoder
-        self.encoder = Encoder(
-            **autoencoder_config
-            # channels=autoencoder_config.channels,
-            # channels_multiplier=autoencoder_config.channels_multiplier,
-            # num_res_blocks=autoencoder_config.num_res_blocks,
-            # attention_resolution=autoencoder_config.attention_resolution,
-            # resolution=autoencoder_config.resolution,
-            # dropout=autoencoder_config.dropout,
+        self.encoder = Encoder(**autoencoder_config)
+
+        self.quant_conv = layers.Conv2D(
+            vqvae_config.embedding_dim, kernel_size=1, name="pre_quant_conv"
         )
-        self.decoder = Decoder(
-            **autoencoder_config
-            # channels=autoencoder_config.channels,
-            # channels_multiplier=autoencoder_config.channels_multiplier,
-            # num_res_blocks=autoencoder_config.num_res_blocks,
-            # attention_resolution=autoencoder_config.attention_resolution,
-            # resolution=autoencoder_config.resolution,
-            # dropout=autoencoder_config.dropout,
-        )
+
         self.quantize = VectorQuantizer(
             vqvae_config.num_embeddings,
             vqvae_config.embedding_dim,
             beta=vqvae_config.beta,
         )
 
-        self.quant_conv = layers.Conv2D(vqvae_config.embedding_dim, kernel_size=1)
         self.post_quant_conv = layers.Conv2D(
-            autoencoder_config.z_channels, kernel_size=1
+            autoencoder_config.z_channels, kernel_size=1, name="post_quant_conv"
         )
+
+        self.decoder = Decoder(**autoencoder_config)
 
         self.perceptual_loss = PerceptualLoss(reduction=tf.keras.losses.Reduction.NONE)
 
@@ -133,6 +120,11 @@ class VQGAN(keras.Model):
         # Setup optimizer (will be given with the compile method)
         self.gen_optimizer: Optimizer = None
         self.disc_optimizer: Optimizer = None
+
+        self.checkpoint_path = checkpoint_path
+
+    def load_from_checkpoint(self, path):
+        self.load_weights(path)
 
     @property
     def metrics(self):
@@ -176,11 +168,14 @@ class VQGAN(keras.Model):
         # Defer the shape initialization
         self.vqvae = self.get_vqvae(input_shape)
         self.discriminator.build(input_shape)
+
+        if self.checkpoint_path is not None:
+            self.load_from_checkpoint(self.checkpoint_path)
         super().build(input_shape)
 
     def get_vqvae(self, input_shape):
         inputs = keras.Input(shape=input_shape[1:])
-        quant = self.encode(inputs)
+        quant, indices = self.encode(inputs)
         reconstructed = self.decode(quant)
         return keras.Model(inputs, reconstructed, name="vq_vae")
 
