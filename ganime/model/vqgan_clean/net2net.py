@@ -165,32 +165,86 @@ class Net2Net(Model):
     #     return super().build(input_shape)
 
     def call(self, inputs, training=None, mask=None):
-        x, c = inputs
+        # x, c = inputs
+
+        # # one step to produce the logits
+        # _, z_indices = self.encode_to_z(x)
+        # _, c_indices = self.encode_to_c(c)
+
+        # cz_indices = tf.concat((c_indices, z_indices), axis=1)
+
+        # target = z_indices
+        # logits = self.transformer(
+        #     cz_indices[:, :-1]  # , training=training
+        # )  # don't know why -1
+
+        # logits = logits[:, tf.shape(c_indices)[1] - 1 :]  # -1 here 'cause -1 above
+
+        # logits = tf.reshape(logits, shape=(-1, logits.shape[-1]))
+        # target = tf.reshape(target, shape=(-1,))
+
+        # return logits, target
+
+        X, y = inputs
+        first_frame = X[:, 0]
+        last_frame = X[:, -1]
+
+        return self.process_video(first_frame, last_frame, y)
+
+    def process_image(self, x, c, target_image=None):
+
+        frame_loss = 0
 
         # one step to produce the logits
-        _, z_indices = self.encode_to_z(x)
+        quant_z, z_indices = self.encode_to_z(x)
         _, c_indices = self.encode_to_c(c)
 
         cz_indices = tf.concat((c_indices, z_indices), axis=1)
 
-        target = z_indices
         logits = self.transformer(
             cz_indices[:, :-1]  # , training=training
         )  # don't know why -1
 
+        # Remove the conditioned part
         logits = logits[:, tf.shape(c_indices)[1] - 1 :]  # -1 here 'cause -1 above
 
         logits = tf.reshape(logits, shape=(-1, logits.shape[-1]))
-        target = tf.reshape(target, shape=(-1,))
 
-        return logits, target
+        if target_image is not None:
+            _, target_indices = self.encode_to_z(target_image)
+            target_indices = tf.reshape(target_indices, shape=(-1,))
+
+            frame_loss = tf.reduce_mean(
+                self.loss_fn(y_true=target_indices, y_pred=logits)
+            )
+
+        image = self.get_image(logits, tf.shape(quant_z))
+
+        return image, frame_loss
+
+    def process_video(self, first_frame, last_frame, target):
+        x = first_frame
+        c = last_frame
+
+        loss = 0
+        generated_video = [x]
+        for i in range(19):  # TODO change 19 to the number of frame in the video
+            generated_image, frame_loss = self.process_image(
+                x, c, target_image=target[:, i, ...]
+            )
+            x = generated_image
+            generated_video.append(generated_image)
+            loss += frame_loss
+        return tf.stack(generated_video, axis=1), loss
 
     def train_step(self, data):
-        loss = 0
+
+        X, y = data
+        first_frame = X[:, 0]
+        last_frame = X[:, -1]
+
         with tf.GradientTape() as tape:
-            # for i in range(y.shape[1]):
-            logits, target = self.call(data, training=True)
-            loss += tf.reduce_mean(self.loss_fn(y_true=target, y_pred=logits))
+            generated_video, loss = self.process_video(first_frame, last_frame, y)
         grads = tape.gradient(
             loss,
             self.transformer.trainable_variables,
@@ -200,6 +254,17 @@ class Net2Net(Model):
 
         # Log results.
         return {m.name: m.result() for m in self.metrics}
+
+    def get_image(self, logits, shape):
+        probs = tf.keras.activations.softmax(logits)
+        _, generated_indices = tf.math.top_k(probs)
+        generated_indices = tf.reshape(
+            generated_indices, (-1,)  # , self.first_stage_model.quantize.num_embeddings)
+        )
+        quant = self.first_stage_model.quantize.get_codebook_entry(
+            generated_indices, shape=shape
+        )
+        return self.first_stage_model.decode(quant)
 
     def test_step(self, data):
         loss = 0
