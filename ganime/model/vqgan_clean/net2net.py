@@ -85,9 +85,9 @@ class WarmUpCosine(keras.optimizers.schedules.LearningRateSchedule):
         )
 
 
-LEN_X_TRAIN = 9000
-BATCH_SIZE = 128
-N_EPOCHS = 300
+LEN_X_TRAIN = 8000
+BATCH_SIZE = 16
+N_EPOCHS = 100
 TOTAL_STEPS = int(LEN_X_TRAIN / BATCH_SIZE * N_EPOCHS)
 WARMUP_EPOCH_PERCENTAGE = 0.15
 WARMUP_STEPS = int(TOTAL_STEPS * WARMUP_EPOCH_PERCENTAGE)
@@ -184,13 +184,14 @@ class Net2Net(Model):
         # target = tf.reshape(target, shape=(-1,))
 
         # return logits, target
+        if isinstance(inputs, tuple) and len(inputs) == 2:
+            first_last_frame, y = inputs
+        else:
+            first_last_frame, y = inputs, None
 
-        X, y = inputs
-        first_frame = X[:, 0]
-        last_frame = X[:, -1]
+        return self.process_video(first_last_frame, y)
 
-        return self.process_video(first_frame, last_frame, y)
-
+    @tf.function()
     def process_image(self, x, c, target_image=None):
 
         frame_loss = 0
@@ -212,6 +213,7 @@ class Net2Net(Model):
 
         if target_image is not None:
             _, target_indices = self.encode_to_z(target_image)
+
             target_indices = tf.reshape(target_indices, shape=(-1,))
 
             frame_loss = tf.reduce_mean(
@@ -222,29 +224,34 @@ class Net2Net(Model):
 
         return image, frame_loss
 
-    def process_video(self, first_frame, last_frame, target):
+    @tf.function()
+    def process_video(self, first_last_frame, target_video=None):
+
+        first_frame = first_last_frame[:, 0]
+        last_frame = first_last_frame[:, -1]
+
         x = first_frame
         c = last_frame
 
         loss = 0
         generated_video = [x]
         for i in range(19):  # TODO change 19 to the number of frame in the video
-            generated_image, frame_loss = self.process_image(
-                x, c, target_image=target[:, i, ...]
-            )
+            target = target_video[:, i, ...] if target_video is not None else None
+            generated_image, frame_loss = self.process_image(x, c, target_image=target)
             x = generated_image
             generated_video.append(generated_image)
             loss += frame_loss
-        return tf.stack(generated_video, axis=1), loss
+        if target_video is not None:
+            return tf.stack(generated_video, axis=1), loss
+        else:
+            return tf.stack(generated_video, axis=1)
 
     def train_step(self, data):
 
-        X, y = data
-        first_frame = X[:, 0]
-        last_frame = X[:, -1]
+        first_last_frame, y = data
 
         with tf.GradientTape() as tape:
-            generated_video, loss = self.process_video(first_frame, last_frame, y)
+            generated_video, loss = self.process_video(first_last_frame, y)
         grads = tape.gradient(
             loss,
             self.transformer.trainable_variables,
@@ -259,7 +266,8 @@ class Net2Net(Model):
         probs = tf.keras.activations.softmax(logits)
         _, generated_indices = tf.math.top_k(probs)
         generated_indices = tf.reshape(
-            generated_indices, (-1,)  # , self.first_stage_model.quantize.num_embeddings)
+            generated_indices,
+            (-1,),  # , self.first_stage_model.quantize.num_embeddings)
         )
         quant = self.first_stage_model.quantize.get_codebook_entry(
             generated_indices, shape=shape
@@ -267,10 +275,11 @@ class Net2Net(Model):
         return self.first_stage_model.decode(quant)
 
     def test_step(self, data):
-        loss = 0
-        # for i in range(y.shape[1]):
-        logits, target = self.call(data, training=True)
-        loss += tf.reduce_mean(self.loss_fn(y_true=target, y_pred=logits))
+
+        first_last_frame, y = data
+
+        generated_video, loss = self.process_video(first_last_frame, y)
+
         self.loss_tracker.update_state(loss)
 
         # Log results.

@@ -79,6 +79,20 @@ class MovingMNIST(SequenceDataset):
 
         return batch_x, batch_y
 
+    def get_fixed_batch(self, idx):
+        self.fixed_indices = (
+            self.fixed_indices
+            if hasattr(self, "fixed_indices")
+            else self.indices[
+                idx * self.batch_size : (idx + 1) * self.batch_size
+            ].copy()
+        )
+        data = self.load_indices(self.fixed_indices)
+        batch_x = np.concatenate([data[:, 0:1, ...], data[:, -1:, ...]], axis=1)
+        batch_y = data[:, 1:, ...]
+
+        return batch_x, batch_y
+
     def load_indices(self, indices):
         paths_to_load = [self.paths[index] for index in indices]
         data = [np.load(path) for path in paths_to_load]
