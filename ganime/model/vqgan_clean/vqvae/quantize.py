@@ -52,11 +52,12 @@ class VectorQuantizer(layers.Layer):
             (tf.stop_gradient(quantized) - x) ** 2
         )
         codebook_loss = tf.reduce_mean((quantized - tf.stop_gradient(x)) ** 2)
-        self.add_loss(commitment_loss + codebook_loss)
+        loss = commitment_loss + codebook_loss
+        # self.add_loss(commitment_loss + codebook_loss)
 
         # Straight-through estimator.
         quantized = x + tf.stop_gradient(quantized - x)
-        return quantized, encoding_indices
+        return quantized, encoding_indices, loss
 
     def get_code_indices(self, flattened_inputs):
         # Calculate L2-normalized distance between the inputs and the codes.
