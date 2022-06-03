@@ -166,18 +166,18 @@ class VQGAN(keras.Model):
 
     def build(self, input_shape):
         # Defer the shape initialization
-        self.vqvae = self.get_vqvae(input_shape)
+        # self.vqvae = self.get_vqvae(input_shape)
         self.discriminator.build(input_shape)
 
         if self.checkpoint_path is not None:
             self.load_from_checkpoint(self.checkpoint_path)
         super().build(input_shape)
 
-    def get_vqvae(self, input_shape):
-        inputs = keras.Input(shape=input_shape[1:])
-        quant, indices = self.encode(inputs)
-        reconstructed = self.decode(quant)
-        return keras.Model(inputs, reconstructed, name="vq_vae")
+    # def get_vqvae(self, input_shape):
+    #     inputs = keras.Input(shape=input_shape[1:])
+    #     quant, indices, loss = self.encode(inputs)
+    #     reconstructed = self.decode(quant)
+    #     return keras.Model(inputs, reconstructed, name="vq_vae")
 
     def encode(self, x):
         h = self.encoder(x)
@@ -190,7 +190,13 @@ class VQGAN(keras.Model):
         return dec
 
     def call(self, inputs, training=True, mask=None):
-        return self.vqvae(inputs)
+        quantized, encoding_indices, loss = self.encode(inputs)
+        reconstructed = self.decode(quantized)
+        return reconstructed, loss
+
+    def predict(self, inputs):
+        output, loss = self(inputs)
+        return output
 
     def calculate_adaptive_weight(
         self,
@@ -251,6 +257,15 @@ class VQGAN(keras.Model):
         self.gen_optimizer = gen_optimizer
         self.disc_optimizer = disc_optimizer
 
+    def get_vqvae_trainable_vars(self):
+        return (
+            self.encoder.trainable_variables
+            + self.quant_conv.trainable_variables
+            + self.quantize.trainable_variables
+            + self.post_quant_conv.trainable_variables
+            + self.decoder.trainable_variables
+        )
+
     def train_step(self, data: Tuple[tf.Tensor, tf.Tensor]):
         x, y = data
 
@@ -259,7 +274,7 @@ class VQGAN(keras.Model):
             with tf.GradientTape(
                 persistent=True
             ) as adaptive_tape:  # Gradient tape for the adaptive weights
-                reconstructions = self(x, training=True)
+                reconstructions, quantized_loss = self(x, training=True)
 
                 logits_fake = self.discriminator(reconstructions, training=False)
 
@@ -281,16 +296,25 @@ class VQGAN(keras.Model):
                 threshold=self.discriminator_iter_start,
             )
 
-            total_loss = (
-                nll_loss
-                + d_weight * disc_factor * g_loss
-                # + self.codebook_weight * tf.reduce_mean(self.vqvae.losses)
-                + self.codebook_weight * sum(self.vqvae.losses)
-            )
+            tmp_loss_1 = nll_loss
+            tmp_loss_2 = d_weight * disc_factor * g_loss
+            tmp_loss_3 = self.codebook_weight * quantized_loss
+
+            tmp_loss_4 = tmp_loss_1 + tmp_loss_2
+            tmp_loss_5 = tmp_loss_4 + tmp_loss_3
+
+            total_loss = tmp_loss_5
+
+            # total_loss = (
+            #     nll_loss
+            #     + d_weight * disc_factor * g_loss
+            #     # + self.codebook_weight * tf.reduce_mean(self.vqvae.losses)
+            #     + self.codebook_weight * sum(self.vqvae.losses)
+            # )
 
         # Backpropagation.
-        grads = tape.gradient(total_loss, self.vqvae.trainable_variables)
-        self.gen_optimizer.apply_gradients(zip(grads, self.vqvae.trainable_variables))
+        grads = tape.gradient(total_loss, self.get_vqvae_trainable_vars())
+        self.gen_optimizer.apply_gradients(zip(grads, self.get_vqvae_trainable_vars()))
 
         # Discriminator
         with tf.GradientTape() as disc_tape:
@@ -313,7 +337,7 @@ class VQGAN(keras.Model):
         # Loss tracking.
         self.total_loss_tracker.update_state(total_loss)
         self.reconstruction_loss_tracker.update_state(nll_loss)
-        self.vq_loss_tracker.update_state(sum(self.vqvae.losses))
+        self.vq_loss_tracker.update_state(quantized_loss)
         self.disc_loss_tracker.update_state(d_loss)
 
         # Log results.
@@ -326,7 +350,7 @@ class VQGAN(keras.Model):
         with tf.GradientTape(
             persistent=True
         ) as adaptive_tape:  # Gradient tape for the adaptive weights
-            reconstructions = self(x, training=False)
+            reconstructions, quantized_loss = self(x, training=False)
 
             logits_fake = self.discriminator(reconstructions, training=False)
 
@@ -352,7 +376,7 @@ class VQGAN(keras.Model):
             nll_loss
             + d_weight * disc_factor * g_loss
             # + self.codebook_weight * tf.reduce_mean(self.vqvae.losses)
-            + self.codebook_weight * sum(self.vqvae.losses)
+            + self.codebook_weight * quantized_loss
         )
 
         # Discriminator
@@ -369,7 +393,7 @@ class VQGAN(keras.Model):
         # Loss tracking.
         self.total_loss_tracker.update_state(total_loss)
         self.reconstruction_loss_tracker.update_state(nll_loss)
-        self.vq_loss_tracker.update_state(sum(self.vqvae.losses))
+        self.vq_loss_tracker.update_state(quantized_loss)
         self.disc_loss_tracker.update_state(d_loss)
 
         # Log results.
