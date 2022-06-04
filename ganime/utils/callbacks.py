@@ -95,8 +95,8 @@ class TensorboardVideo(tf.keras.callbacks.Callback):
     def __init__(
         self,
         logdir: str,
-        train: SequenceDataset,
-        validation: SequenceDataset = None,
+        train: np.array,
+        validation: np.array = None,
         n_videos: int = 3,
     ):
         super().__init__()
@@ -107,13 +107,13 @@ class TensorboardVideo(tf.keras.callbacks.Callback):
         self.n_videos = n_videos
 
     def on_epoch_end(self, epoch, logs):
-        train_X, train_y = self.train.get_fixed_batch(0)
+        train_X, train_y = self.train
         train_X, train_y = self.truncate_X_y(train_X, train_y, self.n_videos)
         train_pred = self.model.predict(train_X)
         self.write_to_tensorboard(train_y, train_pred, "Training data", epoch)
 
         if self.validation is not None:
-            validation_X, validation_y = self.validation.get_fixed_batch(0)
+            validation_X, validation_y = self.validation
             validation_X, validation_y = self.truncate_X_y(
                 validation_X, validation_y, self.n_videos
             )

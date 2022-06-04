@@ -2,8 +2,8 @@ model:
   transformer_config:
     vocab_size: 512
     block_size: 512
-    n_layer: 8
-    n_head: 8
+    n_layer: 16
+    n_head: 16
     n_embedding: 512
     embedding_percentage_drop: 0.1
     attention_percentage_drop: 0.1

@@ -28,7 +28,7 @@ class MovingMNISTImage(SequenceDataset):
     def __getitem__(self, idx):
         inds = self.indices[idx * self.batch_size : (idx + 1) * self.batch_size]
         batch_x = self.data[inds, 0, ...]
-        batch_y = self.data[inds, 4, ...]
+        batch_y = self.data[inds, 1, ...]
 
         return batch_x, batch_y
 
