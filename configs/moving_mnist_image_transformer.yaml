@@ -8,7 +8,7 @@ model:
     embedding_percentage_drop: 0.1
     attention_percentage_drop: 0.1
   first_stage_config:
-    checkpoint_path: ../../../logs/ganime/moving_mnist_image_2022-05-30_01-28-23/checkpoint/checkpoint
+    checkpoint_path: ~/GANime/checkpoints/mnist_image/checkpoint
     vqvae_config:
       beta: 0.25
       num_embeddings: 128
@@ -39,7 +39,7 @@ model:
       vqvae:
         codebook_weight: 1.0
   cond_stage_config:
-    checkpoint_path: ../../../logs/ganime/moving_mnist_image_2022-05-30_01-28-23/checkpoint/checkpoint
+    checkpoint_path: ~/GANime/checkpoints/mnist_image/checkpoint
     vqvae_config:
       beta: 0.25
       num_embeddings: 128

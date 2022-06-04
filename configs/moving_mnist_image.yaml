@@ -25,7 +25,7 @@ model:
     discriminator:
       loss: "hinge"
       factor: 1.0
-      iter_start: 7000
+      iter_start: 62500
       weight: 0.3
     vqvae:
       codebook_weight: 1.0
