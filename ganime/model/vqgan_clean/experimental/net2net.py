@@ -166,9 +166,9 @@ class Net2Net(Model):
         ]
 
     @tf.function(
-        input_signature=[
-            tf.TensorSpec(shape=[None, None, None, 3], dtype=tf.float32),
-        ]
+        # input_signature=[
+        #     tf.TensorSpec(shape=[None, None, None, 3], dtype=tf.float32),
+        # ]
     )
     def encode_to_z(self, x):
         quant_z, indices, quantized_loss = self.first_stage_model.encode(x)
@@ -202,10 +202,10 @@ class Net2Net(Model):
         return self.first_stage_model.decode(quant)
 
     @tf.function(
-        input_signature=[
-            tf.TensorSpec(shape=[None, None, None, 3], dtype=tf.float32),
-            tf.TensorSpec(shape=[None, None, None, 3], dtype=tf.float32),
-        ]
+        # input_signature=[
+        #     tf.TensorSpec(shape=[None, None, None, 3], dtype=tf.float32),
+        #     tf.TensorSpec(shape=[None, None, None, 3], dtype=tf.float32),
+        # ]
     )
     def predict_next_frame(self, previous_frame, end_frame):
         quant_z, z_indices = self.encode_to_z(previous_frame)
@@ -226,14 +226,14 @@ class Net2Net(Model):
         return logits
 
     @tf.function()
-    def process_video(self, first_frame, end_frame, n_frames, target):
+    def process_video_gradient(self, first_frame, end_frame, n_frames, target):
         total_loss = 0.0
         previous_frame = first_frame
 
-        # get trainable variables
-        # train_vars = self.transformer.trainable_variables
-        # # Create empty gradient list (not a tf.Variable list)
-        # accum_gradient = [tf.zeros_like(this_var) for this_var in train_vars]
+        generated_logits = tf.TensorArray(
+            tf.float16, size=0, dynamic_size=True, clear_after_read=False
+        )
+        generated_logits = generated_logits.write(0, previous_frame)
 
         for i in tf.range(tf.math.reduce_max(n_frames)):
 
@@ -244,8 +244,10 @@ class Net2Net(Model):
 
             with tf.GradientTape() as tape:
                 logits = self.predict_next_frame(previous_frame, end_frame)
-                # logits = self.predict_next_recompute(self, previous_frame, end_frame)
-                frame_loss = tf.reduce_mean(self.loss_fn(target_indices, logits))
+                frame_loss = tf.cast(
+                    tf.reduce_mean(self.loss_fn(target_indices, logits)),
+                    dtype=tf.float32,
+                )
 
             total_loss += frame_loss
             # Calculate batch gradients
@@ -258,11 +260,11 @@ class Net2Net(Model):
 
             previous_frame = self.get_image(logits, tf.shape(quant_z))
             previous_frame = tf.reshape(previous_frame, tf.shape(first_frame))
+            generated_logits = generated_logits.write(i - 1, previous_frame)
 
         self.apply_accu_gradients()
         self.loss_tracker.update_state(total_loss)
-
-        # return total_loss
+        return generated_logits.stack()
 
     def train_step(self, data):
         frames = data["video"]
@@ -271,6 +273,6 @@ class Net2Net(Model):
         first_frame = frames[:, 0, :, :, :]
         end_frame = frames[:, -1, :, :, :]
 
-        self.process_video(first_frame, end_frame, n_frames, target=frames)
+        self.process_video_gradient(first_frame, end_frame, n_frames, target=frames)
 
         return {m.name: m.result() for m in self.metrics}

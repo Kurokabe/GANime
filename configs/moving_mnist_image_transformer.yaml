@@ -1,10 +1,10 @@
 model:
   transformer_config:
-    vocab_size: 512
-    block_size: 512
-    n_layer: 24
-    n_head: 16
-    n_embedding: 1024
+    vocab_size: 50257
+    block_size: 1024
+    n_layer: 12
+    n_head: 12
+    n_embedding: 768
     embedding_percentage_drop: 0.1
     attention_percentage_drop: 0.1
   first_stage_config:

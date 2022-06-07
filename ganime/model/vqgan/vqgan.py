@@ -232,7 +232,7 @@ class VectorQuantizer(layers.Layer):
         w_init = tf.random_uniform_initializer()
         self.embeddings = tf.Variable(
             initial_value=w_init(
-                shape=(self.embedding_dim, self.num_embeddings), dtype="float32"
+                shape=(self.embedding_dim, self.num_embeddings)  # , dtype="float32"
             ),
             trainable=True,
             name="embeddings_vqvae",

@@ -112,6 +112,9 @@ class ScalingLayer(layers.Layer):
         self.scale = tf.Variable([0.458, 0.448, 0.450])
 
     def call(self, inputs):
+        if inputs.dtype == tf.float16:
+            self.shift = tf.cast(self.shift, tf.float16)
+            self.scale = tf.cast(self.scale, tf.float16)
         return (inputs - self.shift) / self.scale
 
 
