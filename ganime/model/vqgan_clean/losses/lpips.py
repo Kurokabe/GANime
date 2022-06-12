@@ -40,7 +40,7 @@ class LPIPS(Loss):
         self.lins = [NetLinLayer(use_dropout=use_dropout) for _ in selected_layers]
 
         # TODO: here we use the pytorch weights of the linear layers, try without these layers, or without initializing the weights
-        self(tf.zeros((1, 16, 16, 1)), tf.zeros((1, 16, 16, 1)))
+        self(tf.zeros((1, 16, 16, 3)), tf.zeros((1, 16, 16, 3)))
         self.init_lin_layers()
 
     def get_config(self):
@@ -83,7 +83,6 @@ class LPIPS(Loss):
             self.lins[i].model.layers[1].set_weights([weights])
 
     def call(self, y_true, y_pred):
-
         scaled_true = self.scaling_layer(y_true)
         scaled_pred = self.scaling_layer(y_pred)
 
@@ -102,6 +101,7 @@ class LPIPS(Loss):
             for kk in range(len(outputs_true))
         ]
 
+        # return tf.cast(tf.reduce_sum(res), tf.float32)
         return tf.reduce_sum(res)
 
 
@@ -113,8 +113,9 @@ class ScalingLayer(layers.Layer):
 
     def call(self, inputs):
         if inputs.dtype == tf.float16:
-            self.shift = tf.cast(self.shift, tf.float16)
-            self.scale = tf.cast(self.scale, tf.float16)
+            inputs = tf.cast(inputs, tf.float32)
+            # self.shift = tf.cast(self.shift, tf.float16)
+            # self.scale = tf.cast(self.scale, tf.float16)
         return (inputs - self.shift) / self.scale
 
 
@@ -130,6 +131,7 @@ class NetLinLayer(layers.Layer):
         )
         sequence += [
             layers.Conv2D(channels_out, 1, padding="same", use_bias=False),
+            layers.Activation("linear", dtype="float32"),
         ]
         self.model = Sequential(sequence)
 

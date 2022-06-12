@@ -57,11 +57,13 @@ class NLayerDiscriminator(Model):
         self.sequence += [
             layers.Conv2D(1, kernel_size=kernel_size, strides=1, padding="same")
         ]
+        self.outputs = layers.Activation("linear", dtype="float32")
 
     def call(self, inputs, training=True, mask=None):
         h = inputs
         for seq in self.sequence:
             h = seq(h)
+        h = self.outputs(h)
         return h
 
     def get_config(self):

@@ -72,7 +72,7 @@ class VectorQuantizer(layers.Layer):
         )
 
         # Derive the indices for minimum distances.
-        encoding_indices = tf.argmin(distances, axis=1)
+        encoding_indices = tf.argmin(distances, axis=1)  # , output_type=tf.int32)
         return encoding_indices
 
     def get_codebook_entry(self, indices, shape):

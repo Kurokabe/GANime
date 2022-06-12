@@ -17,6 +17,7 @@ class PerceptualLoss(Loss):
             perceptual_weight (float, optional): The weight of the perceptual loss. Defaults to 1.0.
         """
         super().__init__(**kwargs)
+
         self.perceptual_loss = LPIPS(reduction=tf.keras.losses.Reduction.NONE)
         self.perceptual_weight = perceptual_weight
 
@@ -36,6 +37,7 @@ class PerceptualLoss(Loss):
     ):
         reconstruction_loss = tf.abs(y_true - y_pred)
         if self.perceptual_weight > 0:
+
             perceptual_loss = self.perceptual_loss(y_true, y_pred)
             reconstruction_loss += self.perceptual_weight * perceptual_loss
         else:
