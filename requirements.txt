@@ -158,6 +158,7 @@ pydot-ng==2.0.0
 pyfarmhash==0.3.2
 Pygments==2.11.2
 pymongo==3.12.3
+pynvml
 pyparsing==2.4.2
 pyperclip==1.8.2
 pyprojroot==0.2.0
@@ -206,6 +207,7 @@ torchvision==0.12.0
 tornado==6.1
 tqdm==4.64.0
 traitlets==5.1.1
+transformers
 typeguard==2.13.3
 typing-extensions==4.2.0
 typing-utils==0.1.0

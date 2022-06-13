@@ -122,7 +122,7 @@ class Net2Net(Model):
 
         total_loss = 0.0
 
-        for i in range(1, len(predicted_logits)):
+        for i in range(1, 20):
             target_indices = self.encode_to_z(frames[:, i, ...])[1]
             target_indices = tf.reshape(target_indices, shape=(-1,))
             logits = predicted_logits[i]
@@ -137,102 +137,8 @@ class Net2Net(Model):
         self.loss_tracker.update_state(total_loss)
         return {m.name: m.result() for m in self.metrics}
 
-    @tf.function(
-        # input_signature=[
-        #     tf.TensorSpec(shape=[None, None], dtype=tf.float32),
-        #     tf.TensorSpec(shape=[None], dtype=tf.int32),
-        # ]
-    )
-    # def get_image(self, logits, shape):
 
-    #     probs = tf.keras.activations.softmax(logits)
-    #     _, generated_indices = tf.math.top_k(probs)
-    #     generated_indices = tf.reshape(
-    #         generated_indices,
-    #         (-1,),  # , self.first_stage_model.quantize.num_embeddings)
-    #     )
-    #     quant = self.first_stage_model.quantize.get_codebook_entry(
-    #         generated_indices, shape=shape
-    #     )
-
-    #     return self.first_stage_model.decode(quant)
-
-    # @tf.function(
-    #     # input_signature=[
-    #     #     tf.TensorSpec(shape=[None, None, None, 3], dtype=tf.float32),
-    #     #     tf.TensorSpec(shape=[None, None, None, 3], dtype=tf.float32),
-    #     # ]
-    # )
-    # def predict_next_frame(self, previous_frame, end_frame):
-    #     quant_z, z_indices = self.encode_to_z(previous_frame)
-    #     quant_c, c_indices = self.encode_to_z(end_frame)
-
-    #     cz_indices = tf.concat((c_indices, z_indices), axis=1)
-    #     logits = self.transformer(cz_indices[:, :-1])  # don't know why -1
-
-    #     logits = logits.last_hidden_state
-    #     # print(logits)
-
-    #     # Remove the conditioned part
-    #     logits = logits[:, tf.shape(c_indices)[1] - 1 :]  # -1 here 'cause -1 above
-
-    #     logits = tf.reshape(logits, shape=(-1, tf.shape(logits)[-1]))
-    #     # next_frame = self.get_image(logits[:, :256], tf.shape(quant_z))
-
-    #     return logits
-
-    # @tf.function()
-    # def process_video_gradient(self, first_frame, end_frame, n_frames, target):
-    #     total_loss = 0.0
-    #     previous_frame = first_frame
-
-    #     generated_logits = tf.TensorArray(
-    #         tf.float16, size=0, dynamic_size=True, clear_after_read=False
-    #     )
-    #     generated_logits = generated_logits.write(0, previous_frame)
-
-    #     for i in tf.range(tf.math.reduce_max(n_frames)):
-
-    #         # for i in range(1, 20):
-    #         target_frame = target[:, i, :, :, :]
-
-    #         quant_z, target_indices = self.encode_to_z(target_frame)
-
-    #         with tf.GradientTape() as tape:
-    #             logits = self.predict_next_frame(previous_frame, end_frame)
-    #             frame_loss = tf.cast(
-    #                 tf.reduce_mean(self.loss_fn(target_indices, logits)),
-    #                 dtype=tf.float32,
-    #             )
-
-    #         total_loss += frame_loss
-    #         # Calculate batch gradients
-    #         gradients = tape.gradient(frame_loss, self.transformer.trainable_variables)
-    #         # Accumulate batch gradients
-    #         for i in range(len(self.gradient_accumulation)):
-    #             self.gradient_accumulation[i].assign_add(
-    #                 tf.cast(gradients[i], tf.float32)
-    #             )
-
-    #         previous_frame = self.get_image(logits, tf.shape(quant_z))
-    #         previous_frame = tf.reshape(previous_frame, tf.shape(first_frame))
-    #         generated_logits = generated_logits.write(i - 1, previous_frame)
-
-    #     self.apply_accu_gradients()
-    #     self.loss_tracker.update_state(total_loss)
-    #     return generated_logits.stack()
-
-    # def train_step(self, data):
-    #     frames = data["video"]
-    #     n_frames = data["n_frames"]
-
-    #     first_frame = frames[:, 0, :, :, :]
-    #     end_frame = frames[:, -1, :, :, :]
-
-    #     self.process_video_gradient(first_frame, end_frame, n_frames, target=frames)
-
-    #     return {m.name: m.result() for m in self.metrics}
-
+    @tf.function()
     def predict_next_indices(self, inputs, example_indices):
         logits = self.transformer(inputs)
         logits = logits.last_hidden_state
