@@ -1,125 +1,37 @@
-from ganime.configs.model_configs import ModelConfig
-from tensorflow.keras import Model
-
-from transformers import TFGPT2Model
-import tensorflow as tf
-from tensorflow import keras
-
-import tensorflow_addons as tfa
-
-from ganime.model.vqgan_clean.vqgan import VQGAN
 import numpy as np
-
-
-class WarmUpCosine(keras.optimizers.schedules.LearningRateSchedule):
-    """A LearningRateSchedule that uses a warmup cosine decay schedule."""
-
-    def __init__(self, lr_start, lr_max, warmup_steps, total_steps):
-        """
-        Args:
-            lr_start: The initial learning rate
-            lr_max: The maximum learning rate to which lr should increase to in
-                the warmup steps
-            warmup_steps: The number of steps for which the model warms up
-            total_steps: The total number of steps for the model training
-        """
-        super().__init__()
-        self.lr_start = lr_start
-        self.lr_max = lr_max
-        self.warmup_steps = warmup_steps
-        self.total_steps = total_steps
-        self.pi = tf.constant(np.pi)
-
-    def __call__(self, step):
-        # Check whether the total number of steps is larger than the warmup
-        # steps. If not, then throw a value error.
-        if self.total_steps < self.warmup_steps:
-            raise ValueError(
-                f"Total number of steps {self.total_steps} must be"
-                + f"larger or equal to warmup steps {self.warmup_steps}."
-            )
-
-        # `cos_annealed_lr` is a graph that increases to 1 from the initial
-        # step to the warmup step. After that this graph decays to -1 at the
-        # final step mark.
-        cos_annealed_lr = tf.cos(
-            self.pi
-            * (tf.cast(step, tf.float32) - self.warmup_steps)
-            / tf.cast(self.total_steps - self.warmup_steps, tf.float32)
-        )
-
-        # Shift the mean of the `cos_annealed_lr` graph to 1. Now the grpah goes
-        # from 0 to 2. Normalize the graph with 0.5 so that now it goes from 0
-        # to 1. With the normalized graph we scale it with `lr_max` such that
-        # it goes from 0 to `lr_max`
-        learning_rate = 0.5 * self.lr_max * (1 + cos_annealed_lr)
-
-        # Check whether warmup_steps is more than 0.
-        if self.warmup_steps > 0:
-            # Check whether lr_max is larger that lr_start. If not, throw a value
-            # error.
-            if self.lr_max < self.lr_start:
-                raise ValueError(
-                    f"lr_start {self.lr_start} must be smaller or"
-                    + f"equal to lr_max {self.lr_max}."
-                )
-
-            # Calculate the slope with which the learning rate should increase
-            # in the warumup schedule. The formula for slope is m = ((b-a)/steps)
-            slope = (self.lr_max - self.lr_start) / self.warmup_steps
-
-            # With the formula for a straight line (y = mx+c) build the warmup
-            # schedule
-            warmup_rate = slope * tf.cast(step, tf.float32) + self.lr_start
-
-            # When the current step is lesser that warmup steps, get the line
-            # graph. When the current step is greater than the warmup steps, get
-            # the scaled cos graph.
-            learning_rate = tf.where(
-                step < self.warmup_steps, warmup_rate, learning_rate
-            )
-
-        # When the current step is more that the total steps, return 0 else return
-        # the calculated graph.
-        return tf.where(
-            step > self.total_steps, 0.0, learning_rate, name="learning_rate"
-        )
-
-
-LEN_X_TRAIN = 8000
-BATCH_SIZE = 16
-N_EPOCHS = 500
-TOTAL_STEPS = int(LEN_X_TRAIN / BATCH_SIZE * N_EPOCHS)
-WARMUP_EPOCH_PERCENTAGE = 0.15
-WARMUP_STEPS = int(TOTAL_STEPS * WARMUP_EPOCH_PERCENTAGE)
-
-from pynvml import *
-
-
-def print_gpu_utilization():
-    nvmlInit()
-    handle = nvmlDeviceGetHandleByIndex(0)
-    info = nvmlDeviceGetMemoryInfo(handle)
-    return f"GPU memory occupied: {info.used//1024**2} MB."
+import tensorflow as tf
+import tensorflow_addons as tfa
+from ganime.configs.model_configs import GPTConfig, ModelConfig
+from ganime.model.vqgan_clean.vqgan import VQGAN
+from ganime.trainer.warmup.cosine import WarmUpCosine
+from tensorflow import keras
+from tensorflow.keras import Model
+from transformers import TFGPT2Model
 
 
 class Net2Net(Model):
-    def __init__(self, first_stage_config: ModelConfig, **kwargs):
+    def __init__(
+        self,
+        transformer_config: GPTConfig,
+        first_stage_config: ModelConfig,
+        trainer_config,
+        **kwargs
+    ):
         super().__init__(**kwargs)
         self.first_stage_model = VQGAN(**first_stage_config)
-        self.transformer = TFGPT2Model.from_pretrained("gpt2")
+        # from tensorflow.keras import mixed_precision
+
+        # policy = mixed_precision.Policy("mixed_float16")
+        # mixed_precision.set_global_policy(policy)
+
+        self.transformer = TFGPT2Model.from_pretrained("gpt2", **transformer_config)
         self.loss_fn = tf.keras.losses.SparseCategoricalCrossentropy(
             from_logits=True, reduction=tf.keras.losses.Reduction.NONE
         )
 
         self.loss_tracker = keras.metrics.Mean(name="loss")
 
-        self.scheduled_lrs = WarmUpCosine(
-            lr_start=1e-5,
-            lr_max=2.5e-4,
-            warmup_steps=WARMUP_STEPS,
-            total_steps=TOTAL_STEPS,
-        )
+        self.scheduled_lrs = self.create_warmup_scheduler(trainer_config)
 
         optimizer = tfa.optimizers.AdamW(
             learning_rate=self.scheduled_lrs, weight_decay=1e-4
@@ -138,16 +50,30 @@ class Net2Net(Model):
             for v in self.transformer.trainable_variables
         ]
 
+    def create_warmup_scheduler(self, trainer_config):
+        len_x_train = trainer_config["len_x_train"]
+        batch_size = trainer_config["batch_size"]
+        n_epochs = trainer_config["n_epochs"]
+
+        total_steps = int(len_x_train / batch_size * n_epochs)
+        warmup_epoch_percentage = trainer_config["warmup_epoch_percentage"]
+        warmup_steps = int(total_steps * warmup_epoch_percentage)
+
+        scheduled_lrs = WarmUpCosine(
+            lr_start=trainer_config["lr_start"],
+            lr_max=trainer_config["lr_max"],
+            warmup_steps=warmup_steps,
+            total_steps=total_steps,
+        )
+
+        return scheduled_lrs
+
     def apply_accu_gradients(self):
-        # tf.print("before apply")
-        # print("before apply")
         # apply accumulated gradients
         self.optimizer.apply_gradients(
             zip(self.gradient_accumulation, self.transformer.trainable_variables)
         )
 
-        # tf.print("after apply")
-        # print("after apply")
         # reset
         for i in range(len(self.gradient_accumulation)):
             self.gradient_accumulation[i].assign(
@@ -179,7 +105,37 @@ class Net2Net(Model):
         return quant_z, indices
 
     def call(self, inputs, training=None, mask=None):
-        return self.process_video(inputs)
+
+        first_frame = inputs["first_frame"]
+        last_frame = inputs["last_frame"]
+        n_frames = inputs["n_frames"]
+
+        return self.generate_video(first_frame, last_frame, n_frames)
+
+    def test_step(self, data):
+        first_frame = data["first_frame"]
+        last_frame = data["last_frame"]
+        frames = data["y"]
+        n_frames = data["n_frames"]
+
+        predicted_logits, _, _ = self.predict_logits(first_frame, last_frame, 20)
+
+        total_loss = 0.0
+
+        for i in range(1, len(predicted_logits)):
+            target_indices = self.encode_to_z(frames[:, i, ...])[1]
+            target_indices = tf.reshape(target_indices, shape=(-1,))
+            logits = predicted_logits[i]
+
+            frame_loss = tf.cast(
+                tf.reduce_mean(self.loss_fn(target_indices, logits)),
+                dtype=tf.float32,
+            )
+
+            total_loss += frame_loss
+
+        self.loss_tracker.update_state(total_loss)
+        return {m.name: m.result() for m in self.metrics}
 
     @tf.function(
         # input_signature=[
@@ -187,63 +143,127 @@ class Net2Net(Model):
         #     tf.TensorSpec(shape=[None], dtype=tf.int32),
         # ]
     )
-    def get_image(self, logits, shape):
+    # def get_image(self, logits, shape):
 
-        probs = tf.keras.activations.softmax(logits)
-        _, generated_indices = tf.math.top_k(probs)
-        generated_indices = tf.reshape(
-            generated_indices,
-            (-1,),  # , self.first_stage_model.quantize.num_embeddings)
-        )
-        quant = self.first_stage_model.quantize.get_codebook_entry(
-            generated_indices, shape=shape
-        )
+    #     probs = tf.keras.activations.softmax(logits)
+    #     _, generated_indices = tf.math.top_k(probs)
+    #     generated_indices = tf.reshape(
+    #         generated_indices,
+    #         (-1,),  # , self.first_stage_model.quantize.num_embeddings)
+    #     )
+    #     quant = self.first_stage_model.quantize.get_codebook_entry(
+    #         generated_indices, shape=shape
+    #     )
 
-        return self.first_stage_model.decode(quant)
+    #     return self.first_stage_model.decode(quant)
 
-    @tf.function(
-        # input_signature=[
-        #     tf.TensorSpec(shape=[None, None, None, 3], dtype=tf.float32),
-        #     tf.TensorSpec(shape=[None, None, None, 3], dtype=tf.float32),
-        # ]
-    )
-    def predict_next_frame(self, previous_frame, end_frame):
-        quant_z, z_indices = self.encode_to_z(previous_frame)
-        quant_c, c_indices = self.encode_to_z(end_frame)
+    # @tf.function(
+    #     # input_signature=[
+    #     #     tf.TensorSpec(shape=[None, None, None, 3], dtype=tf.float32),
+    #     #     tf.TensorSpec(shape=[None, None, None, 3], dtype=tf.float32),
+    #     # ]
+    # )
+    # def predict_next_frame(self, previous_frame, end_frame):
+    #     quant_z, z_indices = self.encode_to_z(previous_frame)
+    #     quant_c, c_indices = self.encode_to_z(end_frame)
 
-        cz_indices = tf.concat((c_indices, z_indices), axis=1)
-        logits = self.transformer(cz_indices[:, :-1])  # don't know why -1
+    #     cz_indices = tf.concat((c_indices, z_indices), axis=1)
+    #     logits = self.transformer(cz_indices[:, :-1])  # don't know why -1
 
+    #     logits = logits.last_hidden_state
+    #     # print(logits)
+
+    #     # Remove the conditioned part
+    #     logits = logits[:, tf.shape(c_indices)[1] - 1 :]  # -1 here 'cause -1 above
+
+    #     logits = tf.reshape(logits, shape=(-1, tf.shape(logits)[-1]))
+    #     # next_frame = self.get_image(logits[:, :256], tf.shape(quant_z))
+
+    #     return logits
+
+    # @tf.function()
+    # def process_video_gradient(self, first_frame, end_frame, n_frames, target):
+    #     total_loss = 0.0
+    #     previous_frame = first_frame
+
+    #     generated_logits = tf.TensorArray(
+    #         tf.float16, size=0, dynamic_size=True, clear_after_read=False
+    #     )
+    #     generated_logits = generated_logits.write(0, previous_frame)
+
+    #     for i in tf.range(tf.math.reduce_max(n_frames)):
+
+    #         # for i in range(1, 20):
+    #         target_frame = target[:, i, :, :, :]
+
+    #         quant_z, target_indices = self.encode_to_z(target_frame)
+
+    #         with tf.GradientTape() as tape:
+    #             logits = self.predict_next_frame(previous_frame, end_frame)
+    #             frame_loss = tf.cast(
+    #                 tf.reduce_mean(self.loss_fn(target_indices, logits)),
+    #                 dtype=tf.float32,
+    #             )
+
+    #         total_loss += frame_loss
+    #         # Calculate batch gradients
+    #         gradients = tape.gradient(frame_loss, self.transformer.trainable_variables)
+    #         # Accumulate batch gradients
+    #         for i in range(len(self.gradient_accumulation)):
+    #             self.gradient_accumulation[i].assign_add(
+    #                 tf.cast(gradients[i], tf.float32)
+    #             )
+
+    #         previous_frame = self.get_image(logits, tf.shape(quant_z))
+    #         previous_frame = tf.reshape(previous_frame, tf.shape(first_frame))
+    #         generated_logits = generated_logits.write(i - 1, previous_frame)
+
+    #     self.apply_accu_gradients()
+    #     self.loss_tracker.update_state(total_loss)
+    #     return generated_logits.stack()
+
+    # def train_step(self, data):
+    #     frames = data["video"]
+    #     n_frames = data["n_frames"]
+
+    #     first_frame = frames[:, 0, :, :, :]
+    #     end_frame = frames[:, -1, :, :, :]
+
+    #     self.process_video_gradient(first_frame, end_frame, n_frames, target=frames)
+
+    #     return {m.name: m.result() for m in self.metrics}
+
+    def predict_next_indices(self, inputs, example_indices):
+        logits = self.transformer(inputs)
         logits = logits.last_hidden_state
-        # print(logits)
-
         # Remove the conditioned part
-        logits = logits[:, tf.shape(c_indices)[1] - 1 :]  # -1 here 'cause -1 above
-
+        logits = logits[
+            :, tf.shape(example_indices)[1] - 1 :
+        ]  # -1 here 'cause -1 above
         logits = tf.reshape(logits, shape=(-1, tf.shape(logits)[-1]))
-        # next_frame = self.get_image(logits[:, :256], tf.shape(quant_z))
-
         return logits
 
-    @tf.function()
-    def process_video_gradient(self, first_frame, end_frame, n_frames, target):
+    def train_step(self, data):
+        first_frame = data["first_frame"]
+        last_frame = data["last_frame"]
+        frames = data["y"]
+        n_frames = data["n_frames"]
+
+        first_frame_indices = self.encode_to_z(first_frame)[1]
+        last_frame_indices = self.encode_to_z(last_frame)[1]
         total_loss = 0.0
-        previous_frame = first_frame
 
-        generated_logits = tf.TensorArray(
-            tf.float16, size=0, dynamic_size=True, clear_after_read=False
-        )
-        generated_logits = generated_logits.write(0, previous_frame)
-
-        for i in tf.range(tf.math.reduce_max(n_frames)):
-
-            # for i in range(1, 20):
-            target_frame = target[:, i, :, :, :]
-
-            quant_z, target_indices = self.encode_to_z(target_frame)
+        previous_frame_indices = first_frame_indices
+        for i in range(1, 20):  # tf.range(1, tf.math.reduce_max(n_frames)):
+            cz_indices = tf.concat((last_frame_indices, previous_frame_indices), axis=1)
+            target_indices = self.encode_to_z(frames[:, i, ...])[1]
+            target_indices = tf.reshape(target_indices, shape=(-1,))
 
             with tf.GradientTape() as tape:
-                logits = self.predict_next_frame(previous_frame, end_frame)
+                logits = self.predict_next_indices(
+                    cz_indices[:, :-1], last_frame_indices
+                )  # don't know why -1
+
                 frame_loss = tf.cast(
                     tf.reduce_mean(self.loss_fn(target_indices, logits)),
                     dtype=tf.float32,
@@ -258,21 +278,73 @@ class Net2Net(Model):
                     tf.cast(gradients[i], tf.float32)
                 )
 
-            previous_frame = self.get_image(logits, tf.shape(quant_z))
-            previous_frame = tf.reshape(previous_frame, tf.shape(first_frame))
-            generated_logits = generated_logits.write(i - 1, previous_frame)
+            previous_frame_indices = self.convert_logits_to_indices(
+                logits, tf.shape(last_frame_indices)
+            )
+            # return previous_frame_indices, last_frame_indices
 
         self.apply_accu_gradients()
         self.loss_tracker.update_state(total_loss)
-        return generated_logits.stack()
-
-    def train_step(self, data):
-        frames = data["video"]
-        n_frames = data["n_frames"]
-
-        first_frame = frames[:, 0, :, :, :]
-        end_frame = frames[:, -1, :, :, :]
-
-        self.process_video_gradient(first_frame, end_frame, n_frames, target=frames)
-
         return {m.name: m.result() for m in self.metrics}
+
+    @tf.function()
+    def convert_logits_to_indices(self, logits, shape):
+        probs = tf.keras.activations.softmax(logits)
+        _, generated_indices = tf.math.top_k(probs)
+        generated_indices = tf.reshape(
+            generated_indices,
+            shape,  # , self.first_stage_model.quantize.num_embeddings)
+        )
+        return generated_indices
+        # quant = self.first_stage_model.quantize.get_codebook_entry(
+        #     generated_indices, shape=shape
+        # )
+
+        # return self.first_stage_model.decode(quant)
+
+    def predict_logits(self, first_frame, last_frame, n_frames):
+        quant_first, indices_first = self.encode_to_z(first_frame)
+        quant_last, indices_last = self.encode_to_z(last_frame)
+
+        indices_previous = indices_first
+
+        predicted_logits = tf.TensorArray(
+            tf.float32, size=0, dynamic_size=True, clear_after_read=False
+        )
+
+        for i in range(1, 20):
+            cz_indices = tf.concat((indices_last, indices_previous), axis=1)
+            logits = self.predict_next_indices(cz_indices[:, :-1], indices_last)
+
+            # generated_indices = self.convert_logits_to_indices(
+            #     logits, tf.shape(indices_last)
+            # )
+            predicted_logits = predicted_logits.write(i, logits)
+            indices_previous = self.convert_logits_to_indices(
+                logits, tf.shape(indices_last)
+            )
+
+        return predicted_logits.stack(), tf.shape(quant_first), tf.shape(indices_first)
+
+    def generate_video(self, first_frame, last_frame, n_frames):
+        predicted_logits, quant_shape, indices_shape = self.predict_logits(
+            first_frame, last_frame, n_frames
+        )
+
+        generated_images = tf.TensorArray(
+            tf.float32, size=0, dynamic_size=True, clear_after_read=False
+        )
+        generated_images = generated_images.write(0, first_frame)
+
+        for i in range(len(predicted_logits)):
+            indices = self.convert_logits_to_indices(predicted_logits[i], indices_shape)
+            quant = self.first_stage_model.quantize.get_codebook_entry(
+                indices,
+                shape=quant_shape,
+            )
+            decoded = self.first_stage_model.decode(quant)
+            generated_images = generated_images.write(i, decoded)
+
+        stacked_images = generated_images.stack()
+        videos = tf.transpose(stacked_images, (1, 0, 2, 3, 4))
+        return videos

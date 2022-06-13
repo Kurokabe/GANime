@@ -107,19 +107,20 @@ class TensorboardVideo(tf.keras.callbacks.Callback):
         self.n_videos = n_videos
 
     def on_epoch_end(self, epoch, logs):
-        train_X, train_y = self.train
-        train_X, train_y = self.truncate_X_y(train_X, train_y, self.n_videos)
-        train_pred = self.model.predict(train_X)
-        self.write_to_tensorboard(train_y, train_pred, "Training data", epoch)
+
+        # train_X, train_y = self.train
+        # train_X, train_y = self.truncate_X_y(train_X, train_y, self.n_videos)
+        train_pred = self.model.predict(self.train)
+        self.write_to_tensorboard(self.train["y"], train_pred, "Training data", epoch)
 
         if self.validation is not None:
-            validation_X, validation_y = self.validation
-            validation_X, validation_y = self.truncate_X_y(
-                validation_X, validation_y, self.n_videos
-            )
-            validation_pred = self.model.predict(validation_X)
+            # validation_X, validation_y = self.validation
+            # validation_X, validation_y = self.truncate_X_y(
+            #     validation_X, validation_y, self.n_videos
+            # )
+            validation_pred = self.model.predict(self.validation)
             self.write_to_tensorboard(
-                validation_y, validation_pred, "Validation data", epoch
+                self.validation["y"], validation_pred, "Validation data", epoch
             )
 
     def truncate_X_y(self, X, y, n_videos):
@@ -129,9 +130,6 @@ class TensorboardVideo(tf.keras.callbacks.Callback):
         return X, y
 
     def write_to_tensorboard(self, y_true, y_pred, tag, step):
-        y_true = tf.concat(
-            [y_pred[:, 0:1, ...], y_true], axis=1
-        )  # Add first frame of pred to true to have same shape
         stacked = tf.concat([y_pred, y_true], axis=2)
         self.video_summary(tag, stacked, step)
 

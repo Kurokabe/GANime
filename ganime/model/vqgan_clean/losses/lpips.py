@@ -16,7 +16,6 @@ def normalize_tensor(x, eps=1e-10):
     return x / (norm_factor + eps)
 
 
-@tf.keras.utils.register_keras_serializable()
 class LPIPS(Loss):
     def __init__(self, use_dropout=True, **kwargs):
         super().__init__(**kwargs)
@@ -37,20 +36,13 @@ class LPIPS(Loss):
         outputs = [self.net.get_layer(layer).output for layer in selected_layers]
 
         self.model = Model(self.net.input, outputs)
-        self.lins = [NetLinLayer(use_dropout=use_dropout) for _ in selected_layers]
+        self.lins = [
+            NetLinLayer(input_shape=output.shape[1:], use_dropout=use_dropout)
+            for output in outputs
+        ]
 
         # TODO: here we use the pytorch weights of the linear layers, try without these layers, or without initializing the weights
-        self(tf.zeros((1, 16, 16, 3)), tf.zeros((1, 16, 16, 3)))
         self.init_lin_layers()
-
-    def get_config(self):
-        config = super().get_config()
-        config.update(
-            {
-                "use_dropout": self.use_dropout,
-            }
-        )
-        return config
 
     def load_vgg16(self) -> Model:
         """Load a VGG16 model with the same weights as PyTorch
@@ -80,7 +72,7 @@ class LPIPS(Loss):
                 os.path.join(here(), "models", "NetLinLayer", f"numpy_{i}.npy")
             )
             weights = np.moveaxis(weights, 1, 2)
-            self.lins[i].model.layers[1].set_weights([weights])
+            self.lins[i].set_weights([weights])
 
     def call(self, y_true, y_pred):
         scaled_true = self.scaling_layer(y_true)
@@ -120,20 +112,29 @@ class ScalingLayer(layers.Layer):
 
 
 class NetLinLayer(layers.Layer):
-    def __init__(self, channels_out=1, use_dropout=False):
+    def __init__(self, input_shape, channels_out=1, use_dropout=False):
         super().__init__()
-        sequence = (
-            [
-                layers.Dropout(0.5),
-            ]
-            if use_dropout
-            else []
-        )
-        sequence += [
-            layers.Conv2D(channels_out, 1, padding="same", use_bias=False),
-            layers.Activation("linear", dtype="float32"),
-        ]
-        self.model = Sequential(sequence)
+        inputs = tf.keras.Input(shape=input_shape)
+        x = inputs
+        if use_dropout:
+            x = layers.Dropout(0.5)(x)
+        x = layers.Conv2D(channels_out, 1, padding="same", use_bias=False)(x)
+        x = layers.Activation("linear", dtype="float32")(x)
+        self.model = Model(inputs=inputs, outputs=x)
+
+        # sequence = [layers.Input(input_shape)]
+        # sequence += (
+        #     [
+        #         layers.Dropout(0.5),
+        #     ]
+        #     if use_dropout
+        #     else []
+        # )
+        # sequence += [
+        #     layers.Conv2D(channels_out, 1, padding="same", use_bias=False),
+        #     layers.Activation("linear", dtype="float32"),
+        # ]
+        # self.model = Sequential(sequence)
 
     def call(self, inputs):
         return self.model(inputs)

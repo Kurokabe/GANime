@@ -268,7 +268,6 @@ class VQGAN(keras.Model):
 
     def train_step(self, data: Tuple[tf.Tensor, tf.Tensor]):
         x, y = data
-
         # Train the generator
         with tf.GradientTape() as tape:  # Gradient tape for the final loss
             with tf.GradientTape(
@@ -296,25 +295,32 @@ class VQGAN(keras.Model):
                 threshold=self.discriminator_iter_start,
             )
 
-            tmp_loss_1 = nll_loss
-            tmp_loss_2 = d_weight * disc_factor * g_loss
-            tmp_loss_3 = self.codebook_weight * quantized_loss
+            # tmp_loss_1 = nll_loss
+            # tmp_loss_2 = d_weight * disc_factor * g_loss
+            # tmp_loss_3 = self.codebook_weight * quantized_loss
 
-            tmp_loss_4 = tmp_loss_1 + tmp_loss_2
-            tmp_loss_5 = tmp_loss_4 + tmp_loss_3
+            # tmp_loss_4 = tmp_loss_1 + tmp_loss_2
+            # tmp_loss_5 = tmp_loss_4 + tmp_loss_3
 
-            total_loss = tmp_loss_5
+            # total_loss = tmp_loss_5
 
-            # total_loss = (
-            #     nll_loss
-            #     + d_weight * disc_factor * g_loss
-            #     # + self.codebook_weight * tf.reduce_mean(self.vqvae.losses)
-            #     + self.codebook_weight * sum(self.vqvae.losses)
-            # )
+            total_loss = (
+                nll_loss
+                + d_weight * disc_factor * g_loss
+                # + self.codebook_weight * tf.reduce_mean(self.vqvae.losses)
+                + self.codebook_weight * quantized_loss  # sum(self.vqvae.losses)
+            )
+
+            scaled_loss = self.gen_optimizer.get_scaled_loss(total_loss)
+        scaled_gradients = tape.gradient(scaled_loss, self.get_vqvae_trainable_vars())
+        gradients = self.gen_optimizer.get_unscaled_gradients(scaled_gradients)
+        self.gen_optimizer.apply_gradients(
+            zip(gradients, self.get_vqvae_trainable_vars())
+        )
 
         # Backpropagation.
-        grads = tape.gradient(total_loss, self.get_vqvae_trainable_vars())
-        self.gen_optimizer.apply_gradients(zip(grads, self.get_vqvae_trainable_vars()))
+        # grads = tape.gradient(total_loss, self.get_vqvae_trainable_vars())
+        # self.gen_optimizer.apply_gradients(zip(grads, self.get_vqvae_trainable_vars()))
 
         # Discriminator
         with tf.GradientTape() as disc_tape:
@@ -328,11 +334,19 @@ class VQGAN(keras.Model):
             )
             d_loss = disc_factor * self.disc_loss(logits_real, logits_fake)
 
-        # Backpropagation.
-        disc_grads = disc_tape.gradient(d_loss, self.discriminator.trainable_variables)
-        self.disc_optimizer.apply_gradients(
-            zip(disc_grads, self.discriminator.trainable_variables)
+            scaled_loss = self.disc_optimizer.get_scaled_loss(d_loss)
+        scaled_gradients = disc_tape.gradient(
+            scaled_loss, self.discriminator.trainable_variables
         )
+        gradients = self.disc_optimizer.get_unscaled_gradients(scaled_gradients)
+        self.disc_optimizer.apply_gradients(
+            zip(gradients, self.discriminator.trainable_variables)
+        )
+        # Backpropagation.
+        # disc_grads = disc_tape.gradient(d_loss, self.discriminator.trainable_variables)
+        # self.disc_optimizer.apply_gradients(
+        #     zip(disc_grads, self.discriminator.trainable_variables)
+        # )
 
         # Loss tracking.
         self.total_loss_tracker.update_state(total_loss)

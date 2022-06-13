@@ -1,7 +1,7 @@
 model:
-  # checkpoint_path: ../../../logs/ganime/2022-05-25_08-20-11/checkpoint/checkpoint
+  # checkpoint_path: ../../../checkpoints/mnist_image/checkpoint
   vqvae_config:
-    beta: 0.25
+    beta: 10.0
     num_embeddings: 128
     embedding_dim: 128
   autoencoder_config:
@@ -25,9 +25,43 @@ model:
     discriminator:
       loss: "hinge"
       factor: 1.0
-      iter_start: 62500
+      iter_start: 625000
       weight: 0.3
     vqvae:
       codebook_weight: 1.0
+
+# model:
+#   # checkpoint_path: ../../../checkpoints/mnist_image_fp16/checkpoint
+#   vqvae_config:
+#     beta: 0.25
+#     num_embeddings: 256
+#     embedding_dim: 1024
+#   autoencoder_config:
+#     z_channels: 256
+#     channels: 128
+#     channels_multiplier: 
+#     - 1
+#     - 1 
+#     - 2
+#     - 2
+#     - 4
+#     num_res_blocks: 2
+#     attention_resolution: 
+#     - 16
+#     resolution: 64
+#     dropout: 0.0
+#   discriminator_config:
+#     num_layers: 3
+#     filters: 64
+    
+#   loss_config:
+#     discriminator:
+#       loss: "hinge"
+#       factor: 1.0
+#       iter_start: 625000
+#       weight: 0.3
+#     vqvae:
+#       codebook_weight: 1.0
+
 
 
