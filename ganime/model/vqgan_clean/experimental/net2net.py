@@ -5,8 +5,9 @@ from ganime.configs.model_configs import GPTConfig, ModelConfig
 from ganime.model.vqgan_clean.vqgan import VQGAN
 from ganime.trainer.warmup.cosine import WarmUpCosine
 from tensorflow import keras
-from tensorflow.keras import Model
-from transformers import TFGPT2Model
+from tensorflow.keras import Model, layers
+from transformers import TFGPT2Model, GPT2Config
+from tensorflow.keras import mixed_precision
 
 
 class Net2Net(Model):
@@ -19,12 +20,18 @@ class Net2Net(Model):
     ):
         super().__init__(**kwargs)
         self.first_stage_model = VQGAN(**first_stage_config)
+
+        # self.encoder, self.decoder = self.load_vqgan("../../../checkpoints/tflite/encoder_quant_f16.tflite", "../../../checkpoints/tflite/decoder_quant_f16.tflite")
+
         # from tensorflow.keras import mixed_precision
 
         # policy = mixed_precision.Policy("mixed_float16")
         # mixed_precision.set_global_policy(policy)
 
-        self.transformer = TFGPT2Model.from_pretrained("gpt2", **transformer_config)
+        configuration = GPT2Config(**transformer_config)
+        self.transformer = TFGPT2Model(configuration)#.from_pretrained("gpt2", **self.transformer_config)
+
+
         self.loss_fn = tf.keras.losses.SparseCategoricalCrossentropy(
             from_logits=True, reduction=tf.keras.losses.Reduction.NONE
         )
@@ -49,6 +56,13 @@ class Net2Net(Model):
             tf.Variable(tf.zeros_like(v, dtype=tf.float32), trainable=False)
             for v in self.transformer.trainable_variables
         ]
+
+    def load_vqgan(self, encoder_path: str, decoder_path: str):
+        encoder = tf.lite.Interpreter(model_path=str(encoder_path))
+        decoder = tf.lite.Interpreter(model_path=str(decoder_path))
+
+        return encoder, decoder
+
 
     def create_warmup_scheduler(self, trainer_config):
         len_x_train = trainer_config["len_x_train"]
@@ -142,6 +156,7 @@ class Net2Net(Model):
     def predict_next_indices(self, inputs, example_indices):
         logits = self.transformer(inputs)
         logits = logits.last_hidden_state
+        logits = tf.cast(logits, dtype=tf.float32)
         # Remove the conditioned part
         logits = logits[
             :, tf.shape(example_indices)[1] - 1 :

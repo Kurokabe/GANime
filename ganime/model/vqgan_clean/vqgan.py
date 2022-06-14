@@ -182,11 +182,14 @@ class VQGAN(keras.Model):
     def encode(self, x):
         h = self.encoder(x)
         h = self.quant_conv(h)
-        return self.quantize(h)
+        h = layers.Activation("linear", dtype="float32")(h)
+        quantized, encoding_indices, loss = self.quantize(h)
+        return quantized, encoding_indices, loss
 
     def decode(self, quant):
         quant = self.post_quant_conv(quant)
         dec = self.decoder(quant)
+        dec = layers.Activation("sigmoid", dtype="float32")(dec)
         return dec
 
     def call(self, inputs, training=True, mask=None):
@@ -294,15 +297,6 @@ class VQGAN(keras.Model):
                 global_step=self._get_global_step(self.gen_optimizer),
                 threshold=self.discriminator_iter_start,
             )
-
-            # tmp_loss_1 = nll_loss
-            # tmp_loss_2 = d_weight * disc_factor * g_loss
-            # tmp_loss_3 = self.codebook_weight * quantized_loss
-
-            # tmp_loss_4 = tmp_loss_1 + tmp_loss_2
-            # tmp_loss_5 = tmp_loss_4 + tmp_loss_3
-
-            # total_loss = tmp_loss_5
 
             total_loss = (
                 nll_loss

@@ -5,6 +5,7 @@ import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import Model, layers
 from tensorflow_addons.layers import GroupNormalization
+from tensorflow.keras.layers import BatchNormalization
 
 from .layers import AttentionBlock, ResnetBlock, Upsample
 
@@ -95,7 +96,7 @@ class Decoder(layers.Layer):
             # activation="sigmoid",
             padding="same",
         )
-        self.outputs = layers.Activation("sigmoid", dtype="float32", name="predictions")
+        # self.outputs = layers.Activation("sigmoid", dtype="float32", name="predictions")
 
     def call(self, inputs, training=True, mask=None):
 
@@ -113,5 +114,5 @@ class Decoder(layers.Layer):
         h = self.norm_out(h)
         h = keras.activations.swish(h)
         h = self.conv_out(h)
-        h = self.outputs(h)
+        # h = self.outputs(h)
         return h

@@ -2,6 +2,8 @@ import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers, Sequential
 from tensorflow_addons.layers import GroupNormalization
+from tensorflow.keras.layers import BatchNormalization
+
 
 
 @tf.keras.utils.register_keras_serializable()
@@ -29,7 +31,7 @@ class ResnetBlock(layers.Layer):
         )
 
         self.norm2 = GroupNormalization(groups=32, epsilon=1e-6)
-        self.dropout = layers.Dropout(dropout)
+        self.dropout = layers.Dropout(dropout,)
 
         self.conv2 = layers.Conv2D(
             out_channels, kernel_size=3, strides=1, padding="same"
@@ -74,7 +76,7 @@ class ResnetBlock(layers.Layer):
             else:
                 x = self.nin_shortcut(x)
 
-        return x + h
+        return  x + h
 
 
 @tf.keras.utils.register_keras_serializable()
@@ -82,7 +84,7 @@ class AttentionBlock(layers.Layer):
     def __init__(self, channels, **kwargs):
         super().__init__(**kwargs)
         self.channels = channels
-        self.norm = GroupNormalization(groups=32, epsilon=1e-6)
+        self.norm = BatchNormalization() #GroupNormalization(groups=32, epsilon=1e-6)
         self.q = layers.Conv2D(channels, kernel_size=1, strides=1, padding="valid")
         self.k = layers.Conv2D(channels, kernel_size=1, strides=1, padding="valid")
         self.v = layers.Conv2D(channels, kernel_size=1, strides=1, padding="valid")
@@ -139,7 +141,7 @@ class Downsample(layers.Layer):
         self.down_sample = self.down_sample = layers.AveragePooling2D(
             pool_size=2, strides=2
         )
-        self.conv = layers.Conv2D(channels, kernel_size=3, strides=1, padding="same")
+        self.conv = layers.Conv2D(channels, kernel_size=3, strides=1, padding="same", dtype='float32',)
 
     def get_config(self):
         config = super().get_config()

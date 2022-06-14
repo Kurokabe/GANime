@@ -33,7 +33,7 @@ class VectorQuantizer(layers.Layer):
         return config
 
     def call(self, x):
-        if x.dtype == tf.float16:
+        if x.dtype != tf.float32:
             x = tf.cast(x, tf.float32)
 
         # Calculate the input shape of the inputs and
@@ -80,3 +80,65 @@ class VectorQuantizer(layers.Layer):
         quantized = tf.matmul(encodings, self.embeddings, transpose_b=True)
         quantized = tf.reshape(quantized, shape)
         return quantized
+
+# import tensorflow as tf
+# from tensorflow.keras import layers
+# from tensorflow.keras import backend as K
+
+# class VectorQuantizer(layers.Layer):
+#     def __init__(self, num_embeddings, embedding_dim, beta,
+#                  initializer='uniform', epsilon=1e-10, **kwargs):
+#         self.embedding_dim = embedding_dim
+#         self.num_embeddings = num_embeddings
+#         self.beta = beta
+#         self.initializer = initializer
+#         super().__init__(**kwargs)
+
+#     def build(self, input_shape):
+#         # Add embedding weights.
+#         self.w = self.add_weight(name='embedding',
+#                                   shape=(self.embedding_dim, self.num_embeddings),
+#                                   initializer=self.initializer,
+#                                   trainable=True)
+
+#         # Finalize building.
+#         super().build(input_shape)
+
+#     def call(self, x):
+#         # Flatten input except for last dimension.
+#         flat_inputs = K.reshape(x, (-1, self.embedding_dim))
+
+#         # Calculate distances of input to embedding vectors.
+#         distances = (K.sum(flat_inputs**2, axis=1, keepdims=True)
+#                      - 2 * K.dot(flat_inputs, self.w)
+#                      + K.sum(self.w ** 2, axis=0, keepdims=True))
+
+#         # Retrieve encoding indices.
+#         encoding_indices = K.argmax(-distances, axis=1)
+#         encodings = K.one_hot(encoding_indices, self.num_embeddings)
+#         encoding_indices = K.reshape(encoding_indices, K.shape(x)[:-1])
+#         quantized = self.quantize(encoding_indices)
+
+#         commitment_loss = self.beta * tf.reduce_mean(
+#             (tf.stop_gradient(quantized) - x) ** 2
+#         )
+#         codebook_loss = tf.reduce_mean((quantized - tf.stop_gradient(x)) ** 2)
+#         loss = commitment_loss + codebook_loss
+#         # self.add_loss(commitment_loss + codebook_loss)
+
+#         # Straight-through estimator.
+#         quantized = x + tf.stop_gradient(quantized - x)
+
+#         # Metrics.
+#         #avg_probs = K.mean(encodings, axis=0)
+#         #perplexity = K.exp(- K.sum(avg_probs * K.log(avg_probs + epsilon)))
+        
+#         return quantized, encoding_indices, loss
+
+#     @property
+#     def embeddings(self):
+#         return self.w
+
+#     def quantize(self, encoding_indices):
+#         w = K.transpose(self.embeddings.read_value())
+#         return tf.nn.embedding_lookup(w, encoding_indices)

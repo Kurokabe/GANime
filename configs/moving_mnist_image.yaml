@@ -1,7 +1,7 @@
 model:
-  # checkpoint_path: ../../../checkpoints/mnist_image/checkpoint
+  # checkpoint_path: ../../../checkpoints/mnist_image_f16/checkpoint
   vqvae_config:
-    beta: 10.0
+    beta: 0.125
     num_embeddings: 128
     embedding_dim: 128
   autoencoder_config:
@@ -15,7 +15,7 @@ model:
     num_res_blocks: 1
     attention_resolution: 
     - 16
-    resolution: 128
+    resolution: 64
     dropout: 0.0
   discriminator_config:
     num_layers: 3
