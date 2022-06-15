@@ -25,11 +25,12 @@ class Net2Net(Model):
 
         # from tensorflow.keras import mixed_precision
 
-        # policy = mixed_precision.Policy("mixed_float16")
-        # mixed_precision.set_global_policy(policy)
+        # self.policy = mixed_precision.Policy("mixed_float16")
 
-        configuration = GPT2Config(**transformer_config)
-        self.transformer = TFGPT2Model(configuration)#.from_pretrained("gpt2", **self.transformer_config)
+        # configuration = GPT2Config(**transformer_config)
+        # self.transformer = TFGPT2Model(configuration)#.from_pretrained("gpt2", **self.transformer_config)
+        # configuration = GPT2Config(**transformer_config)
+        self.transformer = TFGPT2Model.from_pretrained("gpt2")#, **transformer_config)
 
 
         self.loss_fn = tf.keras.losses.SparseCategoricalCrossentropy(
@@ -40,12 +41,15 @@ class Net2Net(Model):
 
         self.scheduled_lrs = self.create_warmup_scheduler(trainer_config)
 
+        # optimizer = mixed_precision.LossScaleOptimizer(tfa.optimizers.AdamW(
+        #     learning_rate=self.scheduled_lrs, weight_decay=1e-4
+        # ))
         optimizer = tfa.optimizers.AdamW(
             learning_rate=self.scheduled_lrs, weight_decay=1e-4
         )
         self.compile(
             optimizer=optimizer,
-            loss=[self.loss_fn, None],
+            loss=self.loss_fn,
         )
 
         # self.predict_next_recompute = tf.recompute_grad(self.predict_next_frame)
@@ -170,12 +174,17 @@ class Net2Net(Model):
         frames = data["y"]
         n_frames = data["n_frames"]
 
+        # if self.first_stage_model.built is True and self.transformer.built is False:
+        #     print("Setting mixed precision", self.policy.compute_dtype)
+        #     mixed_precision.set_global_policy(self.policy)
+
         first_frame_indices = self.encode_to_z(first_frame)[1]
         last_frame_indices = self.encode_to_z(last_frame)[1]
         total_loss = 0.0
 
         previous_frame_indices = first_frame_indices
         for i in range(1, 20):  # tf.range(1, tf.math.reduce_max(n_frames)):
+            # previous_frame_indices = self.encode_to_z(frames[:, i - 1, ...])[1]
             cz_indices = tf.concat((last_frame_indices, previous_frame_indices), axis=1)
             target_indices = self.encode_to_z(frames[:, i, ...])[1]
             target_indices = tf.reshape(target_indices, shape=(-1,))
@@ -190,19 +199,29 @@ class Net2Net(Model):
                     dtype=tf.float32,
                 )
 
+                
+            #     scaled_loss = self.optimizer.get_scaled_loss(frame_loss)
             total_loss += frame_loss
+
+
+            # scaled_gradients = tape.gradient(scaled_loss, self.transformer.trainable_variables)
+            # gradients = self.optimizer.get_unscaled_gradients(scaled_gradients)
+
             # Calculate batch gradients
             gradients = tape.gradient(frame_loss, self.transformer.trainable_variables)
+
+
             # Accumulate batch gradients
             for i in range(len(self.gradient_accumulation)):
                 self.gradient_accumulation[i].assign_add(
                     tf.cast(gradients[i], tf.float32)
                 )
 
-            previous_frame_indices = self.convert_logits_to_indices(
-                logits, tf.shape(last_frame_indices)
-            )
-            # return previous_frame_indices, last_frame_indices
+            # previous_frame_indices = self.convert_logits_to_indices(
+            #     logits, tf.shape(last_frame_indices)
+            # )
+            previous_frame_indices = tf.reshape(target_indices, tf.shape(last_frame_indices))
+
 
         self.apply_accu_gradients()
         self.loss_tracker.update_state(total_loss)
@@ -257,7 +276,7 @@ class Net2Net(Model):
         )
         generated_images = generated_images.write(0, first_frame)
 
-        for i in range(len(predicted_logits)):
+        for i in range(1, len(predicted_logits)):
             indices = self.convert_logits_to_indices(predicted_logits[i], indices_shape)
             quant = self.first_stage_model.quantize.get_codebook_entry(
                 indices,

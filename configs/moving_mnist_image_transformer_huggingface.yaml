@@ -2,9 +2,9 @@ model:
   transformer_config:
     vocab_size: 50257
     n_positions: 1024
-    n_embd: 768
-    n_layer: 12
-    n_head: 12
+    n_embd: 1024 #1280 #768
+    n_layer: 24 #36 #12
+    n_head: 16 #20 #12
     resid_pdrop: 0.1
     embd_pdrop: 0.1
     attn_pdrop: 0.1
@@ -41,7 +41,7 @@ model:
         codebook_weight: 1.0
 
 train:
-  batch_size: 32
+  batch_size: 16
   n_epochs: 150
   len_x_train: 8000
   warmup_epoch_percentage: 0.15

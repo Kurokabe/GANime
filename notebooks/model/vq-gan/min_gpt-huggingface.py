@@ -6,7 +6,15 @@
 
 import os
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"   # see issue #152
-#os.environ["CUDA_VISIBLE_DEVICES"]="0"
+os.environ["CUDA_VISIBLE_DEVICES"]="0"
+
+
+# In[3]:
+
+
+import sys
+sys.path.append("../../../")
+
 
 # 
 # from tensorflow.keras import mixed_precision
@@ -16,7 +24,7 @@ os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"   # see issue #152
 # print('Compute dtype: %s' % policy.compute_dtype)
 # print('Variable dtype: %s' % policy.variable_dtype)
 
-# In[3]:
+# In[4]:
 
 
 import tensorflow as tf
@@ -24,7 +32,7 @@ for device in tf.config.list_physical_devices("GPU"):
     tf.config.experimental.set_memory_growth(device, True)
 
 
-# In[4]:
+# In[5]:
 
 
 import omegaconf
@@ -44,13 +52,13 @@ import warnings
 warnings.filterwarnings('ignore')
 
 
-# In[5]:
-
-
-strategy = tf.distribute.MirroredStrategy()
-
-
 # In[6]:
+
+
+strategy = tf.distribute.MirroredStrategy(cross_device_ops=tf.distribute.HierarchicalCopyAllReduce())
+
+
+# In[7]:
 
 
 cfg = omegaconf.OmegaConf.load(here("configs/moving_mnist_image_transformer_huggingface.yaml"))
@@ -60,14 +68,14 @@ global_batch_size = batch_size * strategy.num_replicas_in_sync
 n_epochs = cfg["train"]["n_epochs"]
 
 
-# In[7]:
+# In[8]:
 
 
 dataset_length = 10000
 num_batch = dataset_length / batch_size
 
 
-# In[8]:
+# In[9]:
 
 
 def preprocess(element):
@@ -81,14 +89,14 @@ def preprocess(element):
     return {"first_frame": first_frame, "last_frame": last_frame, "y": y, "n_frames": tf.shape(element)[0]}
 
 
-# In[9]:
+# In[10]:
 
 
 dataset = VideoDataset("../../../data/moving_mnist_tfrecords").load()
 dataset = dataset.shuffle(dataset_length, reshuffle_each_iteration=True).map(preprocess, num_parallel_calls=tf.data.AUTOTUNE).prefetch(tf.data.AUTOTUNE)
 
 
-# In[10]:
+# In[11]:
 
 
 train_size = int(dataset_length * 0.8)
@@ -96,7 +104,7 @@ validation_size = int(dataset_length * 0.1)
 test_size = int(dataset_length * 0.1)
 
 
-# In[11]:
+# In[12]:
 
 
 train_ds = dataset.take(train_size)#.batch(global_batch_size)
@@ -104,14 +112,14 @@ validation_ds = dataset.skip(train_size).take(validation_size)#.batch(global_bat
 test_ds = dataset.skip(train_size + validation_size).take(validation_size)#.batch(global_batch_size)
 
 
-# In[12]:
+# In[13]:
 
 
 train_sample_data = next(train_ds.batch(batch_size).as_numpy_iterator())
 validation_sample_data = next(validation_ds.batch(batch_size).as_numpy_iterator())
 
 
-# In[13]:
+# In[14]:
 
 
 train_ds = train_ds.batch(global_batch_size, drop_remainder=True)
@@ -119,7 +127,7 @@ validation_ds = validation_ds.batch(global_batch_size, drop_remainder=True)
 test_ds = test_ds.batch(global_batch_size, drop_remainder=True)
 
 
-# In[14]:
+# In[15]:
 
 
 from ganime.utils.callbacks import TensorboardVideo, get_logdir
@@ -139,21 +147,22 @@ callbacks = [tensorboard_callback, early_stopping, checkpointing, tensorboard_vi
 #callbacks = [tensorboard_callback, tensorboard_video_callback]
 
 
-# In[15]:
+# In[16]:
 
 
 images = train_sample_data["y"][:,0,...]
 
 
-# In[16]:
+# In[17]:
 
 
 with strategy.scope():
     model = Net2Net(**cfg["model"], trainer_config=cfg["train"])
+    #model.build(train_sample_data["y"].shape)#first_stage_model.build(train_sample_data["y"].shape[1:])
     model.first_stage_model.build(train_sample_data["y"].shape[1:])
 
 
-# In[17]:
+# In[18]:
 
 
 from pynvml import *
@@ -166,7 +175,7 @@ def print_gpu_utilization():
     print(f"GPU memory occupied: {info.used//1024**2} MB.")
 
 
-# In[18]:
+# In[19]:
 
 
 print_gpu_utilization()
@@ -181,7 +190,7 @@ model.fit(train_ds, validation_data=validation_ds, epochs=cfg["train"]["n_epochs
 # In[21]:
 
 
-generated_videos = model.generate_video(train_sample_data["first_frame"], train_sample_data["last_frame"], 20)
+generated_videos = model(train_sample_data)
 
 
 # In[22]:
@@ -190,13 +199,13 @@ generated_videos = model.generate_video(train_sample_data["first_frame"], train_
 display_videos(generated_videos)
 
 
-# In[19]:
+# In[23]:
 
 
 quant_z, indices = model.encode_to_z(images)
 
 
-# In[20]:
+# In[24]:
 
 
 quant = model.first_stage_model.quantize.get_codebook_entry(
@@ -205,10 +214,10 @@ quant = model.first_stage_model.quantize.get_codebook_entry(
 decoded = model.first_stage_model.decode(quant)
 
 
-# In[21]:
+# In[27]:
 
 
-display_images(decoded)
+display_images(model.first_stage_model(images)[0])
 plt.show()
 
 
