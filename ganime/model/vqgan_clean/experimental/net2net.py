@@ -30,8 +30,9 @@ class Net2Net(Model):
         # configuration = GPT2Config(**transformer_config)
         # self.transformer = TFGPT2Model(configuration)#.from_pretrained("gpt2", **self.transformer_config)
         # configuration = GPT2Config(**transformer_config)
-        self.transformer = TFGPT2Model.from_pretrained("gpt2")#, **transformer_config)
-
+        self.transformer = TFGPT2Model.from_pretrained(
+            "gpt2"
+        )  # , **transformer_config)
 
         self.loss_fn = tf.keras.losses.SparseCategoricalCrossentropy(
             from_logits=True, reduction=tf.keras.losses.Reduction.NONE
@@ -66,7 +67,6 @@ class Net2Net(Model):
         decoder = tf.lite.Interpreter(model_path=str(decoder_path))
 
         return encoder, decoder
-
 
     def create_warmup_scheduler(self, trainer_config):
         len_x_train = trainer_config["len_x_train"]
@@ -155,7 +155,6 @@ class Net2Net(Model):
         self.loss_tracker.update_state(total_loss)
         return {m.name: m.result() for m in self.metrics}
 
-
     @tf.function()
     def predict_next_indices(self, inputs, example_indices):
         logits = self.transformer(inputs)
@@ -199,10 +198,8 @@ class Net2Net(Model):
                     dtype=tf.float32,
                 )
 
-                
             #     scaled_loss = self.optimizer.get_scaled_loss(frame_loss)
             total_loss += frame_loss
-
 
             # scaled_gradients = tape.gradient(scaled_loss, self.transformer.trainable_variables)
             # gradients = self.optimizer.get_unscaled_gradients(scaled_gradients)
@@ -210,18 +207,16 @@ class Net2Net(Model):
             # Calculate batch gradients
             gradients = tape.gradient(frame_loss, self.transformer.trainable_variables)
 
-
             # Accumulate batch gradients
             for i in range(len(self.gradient_accumulation)):
                 self.gradient_accumulation[i].assign_add(
                     tf.cast(gradients[i], tf.float32)
                 )
 
-            # previous_frame_indices = self.convert_logits_to_indices(
-            #     logits, tf.shape(last_frame_indices)
-            # )
-            previous_frame_indices = tf.reshape(target_indices, tf.shape(last_frame_indices))
-
+            previous_frame_indices = self.convert_logits_to_indices(
+                logits, tf.shape(last_frame_indices)
+            )
+            # previous_frame_indices = tf.reshape(target_indices, tf.shape(last_frame_indices))
 
         self.apply_accu_gradients()
         self.loss_tracker.update_state(total_loss)
