@@ -1,13 +1,20 @@
 model:
   transformer_config:
+    # vocab_size: 50257
+    # n_positions: 1024
+    # n_embd: 1024 #1280 #768
+    # n_layer: 24 #36 #12
+    # n_head: 16 #20 #12
+    # resid_pdrop: 0.1
+    # embd_pdrop: 0.1
+    # attn_pdrop: 0.1
     vocab_size: 50257
-    n_positions: 1024
-    n_embd: 1024 #1280 #768
-    n_layer: 24 #36 #12
-    n_head: 16 #20 #12
-    resid_pdrop: 0.1
-    embd_pdrop: 0.1
-    attn_pdrop: 0.1
+    block_size: 1024
+    n_layer: 12
+    n_head: 12
+    n_embedding: 768
+    embedding_percentage_drop: 0.1
+    attention_percentage_drop: 0.1
   first_stage_config:
     checkpoint_path: ../../../checkpoints/mnist_image/checkpoint
     vqvae_config:
@@ -41,7 +48,7 @@ model:
         codebook_weight: 1.0
 
 train:
-  batch_size: 16
+  batch_size: 8
   n_epochs: 150
   len_x_train: 8000
   warmup_epoch_percentage: 0.15

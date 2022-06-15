@@ -1,6 +1,7 @@
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import Model, Sequential, layers
+from ganime.utils.recompute_grad import recompute_grad
 
 
 class TransformerBlock(layers.Layer):
@@ -128,10 +129,12 @@ class GPT(Model):
             embedding_percentage_drop=embedding_percentage_drop,
         )
         self.blocks = [
-            TransformerBlock(
-                n_embedding=n_embedding,
-                n_head=n_head,
-                attention_percentage_drop=attention_percentage_drop,
+            recompute_grad(
+                TransformerBlock(
+                    n_embedding=n_embedding,
+                    n_head=n_head,
+                    attention_percentage_drop=attention_percentage_drop,
+                )
             )
             for _ in range(n_layer)
         ]
