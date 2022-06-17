@@ -11,7 +11,6 @@ services:
       - "./:/GANime"
     ports:
       - "8888:8888"
-      - "6006:6006"
     command: jupyter lab --allow-root --ip="*" --token=easy
     #command: jupyter nbconvert --execute --to notebook /GANime/notebooks/model/vq-gan/min_gpt.ipynb
     deploy:
@@ -21,3 +20,11 @@ services:
             - driver: nvidia
               count: all
               capabilities: [ gpu ]
+  tensorboard:
+    image: tensorflow/tensorflow:2.7.0
+    container_name: tensorboard
+    volumes:
+      - "./logs/ganime:/logs/ganime"
+    ports:
+      - "6007:6006"
+    command: tensorboard --logdir=/logs/ganime --bind_all

@@ -110,7 +110,7 @@ class TensorboardVideo(tf.keras.callbacks.Callback):
 
         # train_X, train_y = self.train
         # train_X, train_y = self.truncate_X_y(train_X, train_y, self.n_videos)
-        train_pred = self.model.predict(self.train)
+        train_pred = self.model(self.train)
         self.write_to_tensorboard(self.train["y"], train_pred, "Training data", epoch)
 
         if self.validation is not None:
@@ -118,7 +118,7 @@ class TensorboardVideo(tf.keras.callbacks.Callback):
             # validation_X, validation_y = self.truncate_X_y(
             #     validation_X, validation_y, self.n_videos
             # )
-            validation_pred = self.model.predict(self.validation)
+            validation_pred = self.model(self.validation)
             self.write_to_tensorboard(
                 self.validation["y"], validation_pred, "Validation data", epoch
             )

@@ -16,7 +16,7 @@ class Net2Net(Model):
         transformer_config: GPTConfig,
         first_stage_config: ModelConfig,
         trainer_config,
-        **kwargs
+        **kwargs,
     ):
         super().__init__(**kwargs)
         self.first_stage_model = VQGAN(**first_stage_config)
@@ -33,6 +33,9 @@ class Net2Net(Model):
         self.transformer = TFGPT2Model.from_pretrained(
             "gpt2"
         )  # , **transformer_config)
+        if "checkpoint_path" in transformer_config:
+            print(f"Restoring weights from {transformer_config['checkpoint_path']}")
+            self.load_weights(transformer_config["checkpoint_path"])
 
         self.loss_fn = tf.keras.losses.SparseCategoricalCrossentropy(
             from_logits=True, reduction=tf.keras.losses.Reduction.NONE
@@ -167,6 +170,7 @@ class Net2Net(Model):
         logits = tf.reshape(logits, shape=(-1, tf.shape(logits)[-1]))
         return logits
 
+    @tf.function()
     def train_step(self, data):
         first_frame = data["first_frame"]
         last_frame = data["last_frame"]
