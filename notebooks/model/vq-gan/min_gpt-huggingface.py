@@ -44,10 +44,10 @@ from ganime.visualization.images import display_images
 from ganime.model.vqgan_clean.experimental.net2net import Net2Net
 import tensorflow_addons as tfa
 from datetime import datetime
-from tqdm import tqdm
+from tqdm.auto import tqdm
 from pyprojroot.pyprojroot import here
 
-#tf.get_logger().setLevel('WARNING')
+tf.get_logger().setLevel('WARNING')
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -75,12 +75,23 @@ dataset_length = 10000
 num_batch = dataset_length / batch_size
 
 
+# def preprocess(element):
+#     element = tf.reshape(element, (tf.shape(element)[0], tf.shape(element)[1], tf.shape(element)[2], 3))
+#     element = tf.cast(element, tf.float32) / 255.0
+#     first_frame = element[0,...]
+#     last_frame = element[2,...]
+#     
+#     y = element[0:3,...]
+#     
+#     return {"first_frame": first_frame, "last_frame": last_frame, "y": y, "n_frames": tf.shape(element)[0]}
+
 # In[9]:
 
 
 def preprocess(element):
     element = tf.reshape(element, (tf.shape(element)[0], tf.shape(element)[1], tf.shape(element)[2], 3))
     element = tf.cast(element, tf.float32) / 255.0
+    element = element[:10,...]
     first_frame = element[0,...]
     last_frame = element[-1,...]
     
@@ -127,6 +138,10 @@ validation_ds = validation_ds.batch(global_batch_size, drop_remainder=True)
 test_ds = test_ds.batch(global_batch_size, drop_remainder=True)
 
 
+# train_ds = strategy.experimental_distribute_dataset(train_ds)
+# validation_ds = strategy.experimental_distribute_dataset(validation_ds)
+# test_ds = strategy.experimental_distribute_dataset(test_ds)
+
 # In[15]:
 
 
@@ -143,8 +158,8 @@ early_stopping = tf.keras.callbacks.EarlyStopping(
     restore_best_weights=True,
 )
 checkpointing = tf.keras.callbacks.ModelCheckpoint(os.path.join(logdir, "checkpoint", "checkpoint"), monitor='val_loss', save_best_only=True, save_weights_only=True)
-callbacks = [tensorboard_callback, early_stopping, checkpointing, tensorboard_video_callback]
-#callbacks = [tensorboard_callback, tensorboard_video_callback]
+#callbacks = [tensorboard_callback, early_stopping, checkpointing, tensorboard_video_callback]
+callbacks = [tensorboard_callback, checkpointing, tensorboard_video_callback]
 
 
 # In[16]:
@@ -156,13 +171,19 @@ images = train_sample_data["y"][:,0,...]
 # In[17]:
 
 
+train_sample_data["y"].shape
+
+
+# In[18]:
+
+
 with strategy.scope():
     model = Net2Net(**cfg["model"], trainer_config=cfg["train"])
     #model.build(train_sample_data["y"].shape)#first_stage_model.build(train_sample_data["y"].shape[1:])
     model.first_stage_model.build(train_sample_data["y"].shape[1:])
 
 
-# In[18]:
+# In[19]:
 
 
 from pynvml import *
@@ -175,53 +196,29 @@ def print_gpu_utilization():
     print(f"GPU memory occupied: {info.used//1024**2} MB.")
 
 
-# In[19]:
+# In[20]:
 
 
 print_gpu_utilization()
 
 
-# In[20]:
+# for i in range(10):
+#     pbar = tqdm(train_ds)
+#     for data in pbar:
+#         output = strategy.run(model.train_step, args=(data,))
+#         pbar.set_postfix(loss=output["loss"].numpy())
+
+# In[ ]:
 
 
-model.fit(train_ds, validation_data=validation_ds, epochs=cfg["train"]["n_epochs"], callbacks=callbacks)
+
 
 
 # In[21]:
 
 
-generated_videos = model(train_sample_data)
+model.fit(train_ds, validation_data=validation_ds, epochs=cfg["train"]["n_epochs"], callbacks=callbacks)
 
-
-# In[22]:
-
-
-display_videos(generated_videos)
-
-
-# In[23]:
-
-
-quant_z, indices = model.encode_to_z(images)
-
-
-# In[24]:
-
-
-quant = model.first_stage_model.quantize.get_codebook_entry(
-    indices, shape=tf.shape(quant_z)
-)
-decoded = model.first_stage_model.decode(quant)
-
-
-# In[27]:
-
-
-display_images(model.first_stage_model(images)[0])
-plt.show()
-
-
-# In[ ]:
 
 
 

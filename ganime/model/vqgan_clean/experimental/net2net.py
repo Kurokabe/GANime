@@ -9,7 +9,6 @@ from tensorflow.keras import Model, layers
 from transformers import TFGPT2Model, GPT2Config
 from tensorflow.keras import mixed_precision
 
-
 class Net2Net(Model):
     def __init__(
         self,
@@ -31,7 +30,7 @@ class Net2Net(Model):
         # self.transformer = TFGPT2Model(configuration)#.from_pretrained("gpt2", **self.transformer_config)
         # configuration = GPT2Config(**transformer_config)
         self.transformer = TFGPT2Model.from_pretrained(
-            "gpt2"
+            "gpt2-medium"
         )  # , **transformer_config)
         if "checkpoint_path" in transformer_config:
             print(f"Restoring weights from {transformer_config['checkpoint_path']}")
@@ -53,7 +52,8 @@ class Net2Net(Model):
         )
         self.compile(
             optimizer=optimizer,
-            loss=self.loss_fn,
+            loss=self.loss_fn, 
+            run_eagerly=True
         )
 
         # self.predict_next_recompute = tf.recompute_grad(self.predict_next_frame)
@@ -139,11 +139,11 @@ class Net2Net(Model):
         frames = data["y"]
         n_frames = data["n_frames"]
 
-        predicted_logits, _, _ = self.predict_logits(first_frame, last_frame, 20)
+        predicted_logits, _, _ = self.predict_logits(first_frame, last_frame, n_frames)
 
         total_loss = 0.0
 
-        for i in range(1, 20):
+        for i in range(1, tf.reduce_max(n_frames).numpy()):
             target_indices = self.encode_to_z(frames[:, i, ...])[1]
             target_indices = tf.reshape(target_indices, shape=(-1,))
             logits = predicted_logits[i]
@@ -170,7 +170,6 @@ class Net2Net(Model):
         logits = tf.reshape(logits, shape=(-1, tf.shape(logits)[-1]))
         return logits
 
-    @tf.function()
     def train_step(self, data):
         first_frame = data["first_frame"]
         last_frame = data["last_frame"]
@@ -181,13 +180,13 @@ class Net2Net(Model):
         #     print("Setting mixed precision", self.policy.compute_dtype)
         #     mixed_precision.set_global_policy(self.policy)
 
-        first_frame_indices = self.encode_to_z(first_frame)[1]
+        # first_frame_indices = self.encode_to_z(first_frame)[1]
         last_frame_indices = self.encode_to_z(last_frame)[1]
         total_loss = 0.0
 
-        previous_frame_indices = first_frame_indices
-        for i in range(1, 20):  # tf.range(1, tf.math.reduce_max(n_frames)):
-            # previous_frame_indices = self.encode_to_z(frames[:, i - 1, ...])[1]
+        # previous_frame_indices = first_frame_indices
+        for i in range(1, tf.math.reduce_max(n_frames).numpy()): 
+            previous_frame_indices = self.encode_to_z(frames[:, i - 1, ...])[1]
             cz_indices = tf.concat((last_frame_indices, previous_frame_indices), axis=1)
             target_indices = self.encode_to_z(frames[:, i, ...])[1]
             target_indices = tf.reshape(target_indices, shape=(-1,))
@@ -217,9 +216,9 @@ class Net2Net(Model):
                     tf.cast(gradients[i], tf.float32)
                 )
 
-            previous_frame_indices = self.convert_logits_to_indices(
-                logits, tf.shape(last_frame_indices)
-            )
+            # previous_frame_indices = self.convert_logits_to_indices(
+            #     logits, tf.shape(last_frame_indices)
+            # )
             # previous_frame_indices = tf.reshape(target_indices, tf.shape(last_frame_indices))
 
         self.apply_accu_gradients()
@@ -251,7 +250,7 @@ class Net2Net(Model):
             tf.float32, size=0, dynamic_size=True, clear_after_read=False
         )
 
-        for i in range(1, 20):
+        for i in range(1, tf.math.reduce_max(n_frames).numpy()):
             cz_indices = tf.concat((indices_last, indices_previous), axis=1)
             logits = self.predict_next_indices(cz_indices[:, :-1], indices_last)
 

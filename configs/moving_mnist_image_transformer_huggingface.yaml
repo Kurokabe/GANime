@@ -1,6 +1,6 @@
 model:
   transformer_config:
-    checkpoint_path: ../../../checkpoints/mnist_animated/checkpoint
+    # checkpoint_path: ../../../checkpoints/mnist_animated/checkpoint
     vocab_size: 50257
     n_positions: 1024
     n_embd: 1024 #1280 #768
@@ -42,9 +42,9 @@ model:
         codebook_weight: 1.0
 
 train:
-  batch_size: 8
+  batch_size: 16
   n_epochs: 500
   len_x_train: 8000
   warmup_epoch_percentage: 0.15
   lr_start: 1e-5
-  lr_max: 5e-4
+  lr_max: 2.5e-4
