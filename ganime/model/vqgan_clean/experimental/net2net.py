@@ -9,6 +9,7 @@ from tensorflow.keras import Model, layers
 from transformers import TFGPT2Model, GPT2Config
 from tensorflow.keras import mixed_precision
 
+
 class Net2Net(Model):
     def __init__(
         self,
@@ -19,12 +20,6 @@ class Net2Net(Model):
     ):
         super().__init__(**kwargs)
         self.first_stage_model = VQGAN(**first_stage_config)
-
-        # self.encoder, self.decoder = self.load_vqgan("../../../checkpoints/tflite/encoder_quant_f16.tflite", "../../../checkpoints/tflite/decoder_quant_f16.tflite")
-
-        # from tensorflow.keras import mixed_precision
-
-        # self.policy = mixed_precision.Policy("mixed_float16")
 
         # configuration = GPT2Config(**transformer_config)
         # self.transformer = TFGPT2Model(configuration)#.from_pretrained("gpt2", **self.transformer_config)
@@ -44,32 +39,20 @@ class Net2Net(Model):
 
         self.scheduled_lrs = self.create_warmup_scheduler(trainer_config)
 
-        # optimizer = mixed_precision.LossScaleOptimizer(tfa.optimizers.AdamW(
-        #     learning_rate=self.scheduled_lrs, weight_decay=1e-4
-        # ))
         optimizer = tfa.optimizers.AdamW(
             learning_rate=self.scheduled_lrs, weight_decay=1e-4
         )
         self.compile(
             optimizer=optimizer,
-            loss=self.loss_fn, 
-            run_eagerly=True
+            loss=self.loss_fn,
+            # run_eagerly=True,
         )
 
-        # self.predict_next_recompute = tf.recompute_grad(self.predict_next_frame)
-
         # Gradient accumulation
-        # self.n_gradients = tf.constant(20, dtype=tf.int32)
         self.gradient_accumulation = [
             tf.Variable(tf.zeros_like(v, dtype=tf.float32), trainable=False)
             for v in self.transformer.trainable_variables
         ]
-
-    def load_vqgan(self, encoder_path: str, decoder_path: str):
-        encoder = tf.lite.Interpreter(model_path=str(encoder_path))
-        decoder = tf.lite.Interpreter(model_path=str(decoder_path))
-
-        return encoder, decoder
 
     def create_warmup_scheduler(self, trainer_config):
         len_x_train = trainer_config["len_x_train"]
@@ -143,9 +126,9 @@ class Net2Net(Model):
 
         total_loss = 0.0
 
-        for i in range(1, tf.reduce_max(n_frames).numpy()):
+        for i in range(1, 10):
             target_indices = self.encode_to_z(frames[:, i, ...])[1]
-            target_indices = tf.reshape(target_indices, shape=(-1,))
+            # target_indices = tf.reshape(target_indices, shape=(-1,))
             logits = predicted_logits[i]
 
             frame_loss = tf.cast(
@@ -167,8 +150,45 @@ class Net2Net(Model):
         logits = logits[
             :, tf.shape(example_indices)[1] - 1 :
         ]  # -1 here 'cause -1 above
-        logits = tf.reshape(logits, shape=(-1, tf.shape(logits)[-1]))
+        # logits = tf.reshape(logits, shape=(-1, tf.shape(logits)[-1]))
         return logits
+
+    def body(self, total_loss, frames, index, last_frame_indices):
+
+        previous_frame_indices = self.encode_to_z(frames[:, index - 1, ...])[1]
+        cz_indices = tf.concat((last_frame_indices, previous_frame_indices), axis=1)
+        target_indices = self.encode_to_z(frames[:, index, ...])[1]
+        # target_indices = tf.reshape(target_indices, shape=(-1,))
+
+        with tf.GradientTape() as tape:
+            logits = self.predict_next_indices(
+                cz_indices[:, :-1], last_frame_indices
+            )  # don't know why -1
+
+            frame_loss = tf.cast(
+                tf.reduce_mean(self.loss_fn(target_indices, logits)),
+                dtype=tf.float32,
+            )
+
+        #     scaled_loss = self.optimizer.get_scaled_loss(frame_loss)
+        # total_loss += frame_loss
+
+        # scaled_gradients = tape.gradient(scaled_loss, self.transformer.trainable_variables)
+        # gradients = self.optimizer.get_unscaled_gradients(scaled_gradients)
+
+        # Calculate batch gradients
+        gradients = tape.gradient(frame_loss, self.transformer.trainable_variables)
+
+        # Accumulate batch gradients
+        for i in range(len(self.gradient_accumulation)):
+            self.gradient_accumulation[i].assign_add(tf.cast(gradients[i], tf.float32))
+
+        index = tf.add(index, 1)
+        total_loss = tf.add(total_loss, frame_loss)
+        return total_loss, frames, index, last_frame_indices
+
+    def cond(self, total_loss, frames, index, last_frame_indices):
+        return tf.less(index, 10)
 
     def train_step(self, data):
         first_frame = data["first_frame"]
@@ -185,41 +205,20 @@ class Net2Net(Model):
         total_loss = 0.0
 
         # previous_frame_indices = first_frame_indices
-        for i in range(1, tf.math.reduce_max(n_frames).numpy()): 
-            previous_frame_indices = self.encode_to_z(frames[:, i - 1, ...])[1]
-            cz_indices = tf.concat((last_frame_indices, previous_frame_indices), axis=1)
-            target_indices = self.encode_to_z(frames[:, i, ...])[1]
-            target_indices = tf.reshape(target_indices, shape=(-1,))
+        # c = lambda total_loss, frames, i, last_frame_indices: i < tf.reduce_max(
+        #     n_frames
+        # )
 
-            with tf.GradientTape() as tape:
-                logits = self.predict_next_indices(
-                    cz_indices[:, :-1], last_frame_indices
-                )  # don't know why -1
+        total_loss, _, _, _ = tf.while_loop(
+            cond=self.cond,
+            body=self.body,
+            loop_vars=(tf.constant(0.0), frames, tf.constant(1), last_frame_indices),
+        )
 
-                frame_loss = tf.cast(
-                    tf.reduce_mean(self.loss_fn(target_indices, logits)),
-                    dtype=tf.float32,
-                )
-
-            #     scaled_loss = self.optimizer.get_scaled_loss(frame_loss)
-            total_loss += frame_loss
-
-            # scaled_gradients = tape.gradient(scaled_loss, self.transformer.trainable_variables)
-            # gradients = self.optimizer.get_unscaled_gradients(scaled_gradients)
-
-            # Calculate batch gradients
-            gradients = tape.gradient(frame_loss, self.transformer.trainable_variables)
-
-            # Accumulate batch gradients
-            for i in range(len(self.gradient_accumulation)):
-                self.gradient_accumulation[i].assign_add(
-                    tf.cast(gradients[i], tf.float32)
-                )
-
-            # previous_frame_indices = self.convert_logits_to_indices(
-            #     logits, tf.shape(last_frame_indices)
-            # )
-            # previous_frame_indices = tf.reshape(target_indices, tf.shape(last_frame_indices))
+        # previous_frame_indices = self.convert_logits_to_indices(
+        #     logits, tf.shape(last_frame_indices)
+        # )
+        # previous_frame_indices = tf.reshape(target_indices, tf.shape(last_frame_indices))
 
         self.apply_accu_gradients()
         self.loss_tracker.update_state(total_loss)
@@ -250,7 +249,7 @@ class Net2Net(Model):
             tf.float32, size=0, dynamic_size=True, clear_after_read=False
         )
 
-        for i in range(1, tf.math.reduce_max(n_frames).numpy()):
+        for i in range(1, 10):
             cz_indices = tf.concat((indices_last, indices_previous), axis=1)
             logits = self.predict_next_indices(cz_indices[:, :-1], indices_last)
 
