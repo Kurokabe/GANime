@@ -116,30 +116,7 @@ class Net2Net(Model):
 
         return self.generate_video(first_frame, last_frame, n_frames)
 
-    def test_step(self, data):
-        first_frame = data["first_frame"]
-        last_frame = data["last_frame"]
-        frames = data["y"]
-        n_frames = data["n_frames"]
 
-        predicted_logits, _, _ = self.predict_logits(first_frame, last_frame, n_frames)
-
-        total_loss = 0.0
-
-        for i in range(1, 10):
-            target_indices = self.encode_to_z(frames[:, i, ...])[1]
-            # target_indices = tf.reshape(target_indices, shape=(-1,))
-            logits = predicted_logits[i]
-
-            frame_loss = tf.cast(
-                tf.reduce_mean(self.loss_fn(target_indices, logits)),
-                dtype=tf.float32,
-            )
-
-            total_loss += frame_loss
-
-        self.loss_tracker.update_state(total_loss)
-        return {m.name: m.result() for m in self.metrics}
 
     @tf.function()
     def predict_next_indices(self, inputs, example_indices):
@@ -153,6 +130,7 @@ class Net2Net(Model):
         # logits = tf.reshape(logits, shape=(-1, tf.shape(logits)[-1]))
         return logits
 
+    @tf.function()
     def body(self, total_loss, frames, index, last_frame_indices):
 
         previous_frame_indices = self.encode_to_z(frames[:, index - 1, ...])[1]
@@ -170,12 +148,6 @@ class Net2Net(Model):
                 dtype=tf.float32,
             )
 
-        #     scaled_loss = self.optimizer.get_scaled_loss(frame_loss)
-        # total_loss += frame_loss
-
-        # scaled_gradients = tape.gradient(scaled_loss, self.transformer.trainable_variables)
-        # gradients = self.optimizer.get_unscaled_gradients(scaled_gradients)
-
         # Calculate batch gradients
         gradients = tape.gradient(frame_loss, self.transformer.trainable_variables)
 
@@ -188,7 +160,7 @@ class Net2Net(Model):
         return total_loss, frames, index, last_frame_indices
 
     def cond(self, total_loss, frames, index, last_frame_indices):
-        return tf.less(index, 10)
+        return tf.less(index, tf.shape(frames)[1])
 
     def train_step(self, data):
         first_frame = data["first_frame"]
@@ -196,18 +168,8 @@ class Net2Net(Model):
         frames = data["y"]
         n_frames = data["n_frames"]
 
-        # if self.first_stage_model.built is True and self.transformer.built is False:
-        #     print("Setting mixed precision", self.policy.compute_dtype)
-        #     mixed_precision.set_global_policy(self.policy)
-
-        # first_frame_indices = self.encode_to_z(first_frame)[1]
         last_frame_indices = self.encode_to_z(last_frame)[1]
         total_loss = 0.0
-
-        # previous_frame_indices = first_frame_indices
-        # c = lambda total_loss, frames, i, last_frame_indices: i < tf.reduce_max(
-        #     n_frames
-        # )
 
         total_loss, _, _, _ = tf.while_loop(
             cond=self.cond,
@@ -215,12 +177,43 @@ class Net2Net(Model):
             loop_vars=(tf.constant(0.0), frames, tf.constant(1), last_frame_indices),
         )
 
-        # previous_frame_indices = self.convert_logits_to_indices(
-        #     logits, tf.shape(last_frame_indices)
-        # )
-        # previous_frame_indices = tf.reshape(target_indices, tf.shape(last_frame_indices))
-
         self.apply_accu_gradients()
+        self.loss_tracker.update_state(total_loss)
+        return {m.name: m.result() for m in self.metrics}
+
+    def cond_test_step(self, total_loss, frames, index, last_frame_indices):
+        return tf.less(index, tf.shape(frames)[1])
+
+    @tf.function()
+    def body_test_step(self, total_loss, frames, index, predicted_logits):
+        target_indices = self.encode_to_z(frames[:, index, ...])[1]
+        # target_indices = tf.reshape(target_indices, shape=(-1,))
+        logits = predicted_logits[index]
+
+        frame_loss = tf.cast(
+            tf.reduce_mean(self.loss_fn(target_indices, logits)),
+            dtype=tf.float32,
+        )
+
+        index = tf.add(index, 1)
+        total_loss = tf.add(total_loss, frame_loss)
+        return total_loss, frames, index, predicted_logits
+
+    def test_step(self, data):
+        first_frame = data["first_frame"]
+        last_frame = data["last_frame"]
+        frames = data["y"]
+        n_frames = data["n_frames"]
+
+        predicted_logits, _, _ = self.predict_logits(first_frame, last_frame, n_frames)
+
+        total_loss, _, _, _ = tf.while_loop(
+            cond=self.cond_test_step,
+            body=self.body_test_step,
+            loop_vars=(tf.constant(0.0), frames, tf.constant(1), predicted_logits),
+        )
+       
+
         self.loss_tracker.update_state(total_loss)
         return {m.name: m.result() for m in self.metrics}
 
@@ -239,6 +232,7 @@ class Net2Net(Model):
 
         # return self.first_stage_model.decode(quant)
 
+    @tf.function()
     def predict_logits(self, first_frame, last_frame, n_frames):
         quant_first, indices_first = self.encode_to_z(first_frame)
         quant_last, indices_last = self.encode_to_z(last_frame)
@@ -249,20 +243,26 @@ class Net2Net(Model):
             tf.float32, size=0, dynamic_size=True, clear_after_read=False
         )
 
-        for i in range(1, 10):
+        index = tf.constant(1)
+        while tf.less(index, tf.reduce_max(n_frames)):
+            tf.autograph.experimental.set_loop_options(
+                shape_invariants=[(indices_previous, tf.TensorShape([None, None]))]
+            )
             cz_indices = tf.concat((indices_last, indices_previous), axis=1)
             logits = self.predict_next_indices(cz_indices[:, :-1], indices_last)
 
             # generated_indices = self.convert_logits_to_indices(
             #     logits, tf.shape(indices_last)
             # )
-            predicted_logits = predicted_logits.write(i, logits)
+            predicted_logits = predicted_logits.write(index, logits)
             indices_previous = self.convert_logits_to_indices(
-                logits, tf.shape(indices_last)
+                logits, tf.shape(indices_first)
             )
+            index = tf.add(index, 1)
 
         return predicted_logits.stack(), tf.shape(quant_first), tf.shape(indices_first)
 
+    @tf.function()
     def generate_video(self, first_frame, last_frame, n_frames):
         predicted_logits, quant_shape, indices_shape = self.predict_logits(
             first_frame, last_frame, n_frames
@@ -273,14 +273,16 @@ class Net2Net(Model):
         )
         generated_images = generated_images.write(0, first_frame)
 
-        for i in range(1, len(predicted_logits)):
-            indices = self.convert_logits_to_indices(predicted_logits[i], indices_shape)
+        index = tf.constant(1)
+        while tf.less(index, tf.reduce_max(n_frames)):
+            indices = self.convert_logits_to_indices(predicted_logits[index], indices_shape)
             quant = self.first_stage_model.quantize.get_codebook_entry(
                 indices,
                 shape=quant_shape,
             )
             decoded = self.first_stage_model.decode(quant)
-            generated_images = generated_images.write(i, decoded)
+            generated_images = generated_images.write(index, decoded)
+            index = tf.add(index, 1)
 
         stacked_images = generated_images.stack()
         videos = tf.transpose(stacked_images, (1, 0, 2, 3, 4))
