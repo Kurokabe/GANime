@@ -19,7 +19,7 @@ def display_videos(data, n_rows=3, n_cols=3):
     def init():
         for i in range(n_rows):
             for j in range(n_cols):
-                idx = i * n_rows + j
+                idx = i * n_cols + j
                 video = data[idx]
                 im = ims[idx]
                 im.set_data(video[0, :, :, :])
@@ -28,7 +28,7 @@ def display_videos(data, n_rows=3, n_cols=3):
     def animate(frame_id):
         for i in range(n_rows):
             for j in range(n_cols):
-                idx = i * n_rows + j
+                idx = i * n_cols + j
                 video = data[idx]
                 ims[idx].set_data(video[frame_id, :, :, :])
         return ims
