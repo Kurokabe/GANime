@@ -1,6 +1,6 @@
 model:
   transformer_config:
-    # checkpoint_path: ../../../checkpoints/mnist_animated/checkpoint
+    # checkpoint_path: ../../../checkpoints/moving_mnist_gpt-medium/checkpoint
     vocab_size: 50257
     n_positions: 1024
     n_embd: 1024 #1280 #768
