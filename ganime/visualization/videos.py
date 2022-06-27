@@ -34,7 +34,7 @@ def display_videos(data, n_rows=3, n_cols=3):
         return ims
 
     anim = animation.FuncAnimation(
-        fig, animate, init_func=init, frames=data.shape[1], blit=True, interval=100
+        fig, animate, init_func=init, frames=data.shape[1], blit=True, interval=150
     )
     # FFwriter = animation.FFMpegWriter(fps=10, codec="libx264")
     # anim.save("basic_animation1.mp4", writer=FFwriter)

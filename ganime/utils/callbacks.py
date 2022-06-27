@@ -133,7 +133,7 @@ class TensorboardVideo(tf.keras.callbacks.Callback):
         stacked = tf.concat([y_pred, y_true], axis=2)
         self.video_summary(tag, stacked, step)
 
-    def video_summary(self, name, video, step=None, fps=20):
+    def video_summary(self, name, video, step=None, fps=10):
         name = tf.constant(name).numpy().decode("utf-8")
         video = np.array(video)
         if video.dtype in (np.float32, np.float64):
