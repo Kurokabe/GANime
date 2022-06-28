@@ -43,8 +43,9 @@ model:
 
 train:
   batch_size: 8
-  n_epochs: 500
+  n_epochs: 100
   len_x_train: 8000
   warmup_epoch_percentage: 0.15
   lr_start: 1e-5
   lr_max: 2.5e-4
+  perceptual_loss_weight: 1.0
