@@ -1,20 +1,24 @@
-import click
-import ray
-from ray.train import Trainer
-from ray import tune
+import os
 
+import click
+import omegaconf
+import ray
+from pyprojroot.pyprojroot import here
+from ray import tune
+from ray.train import Trainer
 from ray.tune.schedulers import AsyncHyperBandScheduler
 from ray.tune.suggest import ConcurrencyLimiter
 from ray.tune.suggest.optuna import OptunaSearch
+
 from ganime.trainer.ganime import TrainableGANime
-from pyprojroot.pyprojroot import here
+
+os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"  # see issue #152
+os.environ["CUDA_VISIBLE_DEVICES"] = "0, 1, 2, 3, 4, 5"
 
 
 def get_metric_direction(metric: str):
-    if metric == "loss":
+    if "loss" in metric:
         return "min"
-    elif metric == "accuracy":
-        return "max"
     else:
         raise ValueError(f"Unknown metric: {metric}")
 
@@ -27,9 +31,23 @@ def trial_dirname_creator(trial):
     return f"{trial.trial_id}"
 
 
+def get_search_space(model):
+    if model == "vqgan":
+        return {
+            "beta": tune.uniform(0.1, 1.0),
+            "num_embeddings": tune.choice([128, 256]),
+            "embedding_dim": tune.choice([128, 256, 512, 1024]),
+            "z_channels": tune.choice([64, 128, 256]),
+            "channels": tune.choice([64, 128, 256]),
+            "attention_resolution": tune.choice([[16], [32], [16, 32]]),
+            "batch_size": tune.choice([8, 16]),
+        }
+
+
 def tune_ganime(
     experiment_name: str,
     dataset_name: str,
+    config_file: str,
     model: str,
     metric: str,
     epochs: int,
@@ -56,8 +74,8 @@ def tune_ganime(
             "dataset_name": dataset_name,
             "dataset_path": dataset_path,
             "model": model,
-            "lr": tune.loguniform(1e-4, 1e-1),
-            "batch_size": tune.choice([128, 256]),
+            "config_file": config_file,
+            "hyperparameters": get_search_space(model),
         },
         resources_per_trial={
             "cpu": num_cpus // max_concurrent_trials,
@@ -66,7 +84,7 @@ def tune_ganime(
         trial_name_creator=trial_name_id,
         trial_dirname_creator=trial_dirname_creator,
     )
-    best_loss = analysis.get_best_config(metric="loss", mode="min")
+    best_loss = analysis.get_best_config(metric="total_loss", mode="min")
     # best_accuracy = analysis.get_best_config(metric="accuracy", mode="max")
     print(f"Best loss config: {best_loss}")
     # print(f"Best accuracy config: {best_accuracy}")
@@ -76,54 +94,63 @@ def tune_ganime(
 @click.command()
 @click.option(
     "--dataset",
-    type=click.Choice(["moving_mnist"], case_sensitive=False),
-    default="moving_mnist",
+    type=click.Choice(["moving_mnist_images", "kny_images"], case_sensitive=False),
+    default="kny_images",
     help="Dataset to use",
 )
 @click.option(
     "--model",
-    type=click.Choice(["moving_vae", "P2P", "GANime"], case_sensitive=False),
-    default="moving_vae",
+    type=click.Choice(["vqgan", "net2net"], case_sensitive=False),
+    default="vqgan",
     help="Model to use",
 )
 @click.option(
     "--epochs",
-    default=5,
+    default=300,
     help="Number of epochs to run",
 )
 @click.option(
     "--num_samples",
-    default=4,
+    default=50,
     help="Total number of trials to run",
 )
 @click.option(
     "--num_cpus",
-    default=128,
+    default=64,
     help="Number of cpus to use",
 )
 @click.option(
     "--num_gpus",
-    default=8,
+    default=6,
     help="Number of gpus to use",
 )
 @click.option(
     "--max_concurrent_trials",
-    default=1,
+    default=6,
     help="Maximum number of concurrent trials",
 )
 @click.option(
     "--metric",
-    type=click.Choice(["loss"], case_sensitive=False),
-    default="loss",
+    type=click.Choice(
+        ["total_loss", "reconstruction_loss", "vq_loss", "disc_loss"],
+        case_sensitive=False,
+    ),
+    default="total_loss",
     help="The metric used to select the best trial",
 )
 @click.option(
     "--experiment_name",
-    default="",
+    default="kny_images",
     help="The name of the experiment for logging in Tensorboard",
+)
+@click.option(
+    "--config_file",
+    default="kny_image.yaml",
+    help="The name of the config file located inside ./config",
 )
 def run(
     experiment_name: str,
+    config_file: str,
     dataset: str,
     model: str,
     epochs: int,
@@ -133,10 +160,13 @@ def run(
     max_concurrent_trials: int,
     metric: str,
 ):
+    config_file = here(os.path.join("configs", config_file))
+
     ray.init(num_cpus=num_cpus, num_gpus=num_gpus)
     tune_ganime(
         experiment_name=experiment_name,
         dataset_name=dataset,
+        config_file=config_file,
         model=model,
         epochs=epochs,
         num_samples=num_samples,

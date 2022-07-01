@@ -6,7 +6,6 @@ from typing import Optional
 import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
-from ganime.data.base import SequenceDataset
 from ganime.visualization.images import display_true_pred
 
 
@@ -51,7 +50,7 @@ class TensorboardImage(tf.keras.callbacks.Callback):
         logdir: str,
         train: np.array,
         validation: np.array = None,
-        n_images: int = 3,
+        n_images: int = 5,
     ):
         super().__init__()
         self.logdir = logdir

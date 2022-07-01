@@ -49,6 +49,9 @@ model:
     vqvae:
       codebook_weight: 1.0
 
+trainer:
+  batch_size: 16
+
 # model:
 #   # checkpoint_path: ../../../checkpoints/mnist_image_fp16/checkpoint
 #   vqvae_config:
