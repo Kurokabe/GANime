@@ -92,10 +92,9 @@ class Decoder(layers.Layer):
             output_channels,
             kernel_size=3,
             strides=1,
-            # activation="sigmoid",
+            activation="sigmoid",
             padding="same",
         )
-        self.outputs = layers.Activation("sigmoid", dtype="float32", name="predictions")
 
     def call(self, inputs, training=True, mask=None):
 
@@ -113,5 +112,4 @@ class Decoder(layers.Layer):
         h = self.norm_out(h)
         h = keras.activations.swish(h)
         h = self.conv_out(h)
-        h = self.outputs(h)
         return h

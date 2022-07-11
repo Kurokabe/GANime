@@ -46,13 +46,11 @@ class VQGAN(keras.Model):
         **kwargs,
     ):
         """Create a VQ-GAN model.
-
         Args:
             vqvae (VQVAEConfig): The configuration of the VQ-VAE
             autoencoder (AutoencoderConfig): The configuration of the autoencoder
             discriminator (DiscriminatorConfig): The configuration of the discriminator
             loss_config (LossConfig): The configuration of the loss
-
         Raises:
             ValueError: The specified loss type is not supported.
         """
@@ -182,14 +180,11 @@ class VQGAN(keras.Model):
     def encode(self, x):
         h = self.encoder(x)
         h = self.quant_conv(h)
-        h = layers.Activation("linear", dtype="float32")(h)
-        quantized, encoding_indices, loss = self.quantize(h)
-        return quantized, encoding_indices, loss
+        return self.quantize(h)
 
     def decode(self, quant):
         quant = self.post_quant_conv(quant)
         dec = self.decoder(quant)
-        dec = layers.Activation("sigmoid", dtype="float32")(dec)
         return dec
 
     def call(self, inputs, training=True, mask=None):
@@ -210,14 +205,12 @@ class VQGAN(keras.Model):
         discriminator_weight: float,
     ) -> tf.Tensor:
         """Calculate the adaptive weight for the discriminator which prevents mode collapse (https://arxiv.org/abs/2012.03149).
-
         Args:
             nll_loss (tf.Tensor): Negative log likelihood loss (the reconstruction loss).
             g_loss (tf.Tensor): Generator loss (compared to the discriminator).
             tape (tf.GradientTape): Gradient tape used to compute the nll_loss and g_loss
             trainable_vars (list): List of trainable vars of the last layer (conv_out of the decoder)
             discriminator_weight (float): Weight of the discriminator
-
         Returns:
             tf.Tensor: Discriminator weights used for the discriminator loss to benefits best the generator or discriminator and avoiding mode collapse.
         """
@@ -233,13 +226,11 @@ class VQGAN(keras.Model):
         self, weight: float, global_step: int, threshold: int = 0, value: float = 0.0
     ) -> float:
         """Adapt the weight depending on the global step. If the global_step is lower than the threshold, the weight is set to value. Used to reduce the weight of the discriminator during the first iterations.
-
         Args:
             weight (float): The weight to adapt.
             global_step (int): The global step of the optimizer
             threshold (int, optional): The threshold under which the weight will be set to `value`. Defaults to 0.
             value (float, optional): The value of the weight. Defaults to 0.0.
-
         Returns:
             float: The adapted weight
         """
@@ -271,6 +262,7 @@ class VQGAN(keras.Model):
 
     def train_step(self, data: Tuple[tf.Tensor, tf.Tensor]):
         x, y = data
+
         # Train the generator
         with tf.GradientTape() as tape:  # Gradient tape for the final loss
             with tf.GradientTape(
@@ -298,19 +290,21 @@ class VQGAN(keras.Model):
                 threshold=self.discriminator_iter_start,
             )
 
-            total_loss = (
-                nll_loss
-                + d_weight * disc_factor * g_loss
-                # + self.codebook_weight * tf.reduce_mean(self.vqvae.losses)
-                + self.codebook_weight * quantized_loss  # sum(self.vqvae.losses)
-            )
+            tmp_loss_1 = nll_loss
+            tmp_loss_2 = d_weight * disc_factor * g_loss
+            tmp_loss_3 = self.codebook_weight * quantized_loss
 
-        #     scaled_loss = self.gen_optimizer.get_scaled_loss(total_loss)
-        # scaled_gradients = tape.gradient(scaled_loss, self.get_vqvae_trainable_vars())
-        # gradients = self.gen_optimizer.get_unscaled_gradients(scaled_gradients)
-        # self.gen_optimizer.apply_gradients(
-        #     zip(gradients, self.get_vqvae_trainable_vars())
-        # )
+            tmp_loss_4 = tmp_loss_1 + tmp_loss_2
+            tmp_loss_5 = tmp_loss_4 + tmp_loss_3
+
+            total_loss = tmp_loss_5
+
+            # total_loss = (
+            #     nll_loss
+            #     + d_weight * disc_factor * g_loss
+            #     # + self.codebook_weight * tf.reduce_mean(self.vqvae.losses)
+            #     + self.codebook_weight * sum(self.vqvae.losses)
+            # )
 
         # Backpropagation.
         grads = tape.gradient(total_loss, self.get_vqvae_trainable_vars())
@@ -328,14 +322,6 @@ class VQGAN(keras.Model):
             )
             d_loss = disc_factor * self.disc_loss(logits_real, logits_fake)
 
-        #     scaled_loss = self.disc_optimizer.get_scaled_loss(d_loss)
-        # scaled_gradients = disc_tape.gradient(
-        #     scaled_loss, self.discriminator.trainable_variables
-        # )
-        # gradients = self.disc_optimizer.get_unscaled_gradients(scaled_gradients)
-        # self.disc_optimizer.apply_gradients(
-        #     zip(gradients, self.discriminator.trainable_variables)
-        # )
         # Backpropagation.
         disc_grads = disc_tape.gradient(d_loss, self.discriminator.trainable_variables)
         self.disc_optimizer.apply_gradients(

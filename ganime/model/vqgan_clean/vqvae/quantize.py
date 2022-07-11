@@ -15,7 +15,7 @@ class VectorQuantizer(layers.Layer):
         w_init = tf.random_uniform_initializer()
         self.embeddings = tf.Variable(
             initial_value=w_init(
-                shape=(self.embedding_dim, self.num_embeddings)  # , dtype="float32"
+                shape=(self.embedding_dim, self.num_embeddings), dtype="float32"
             ),
             trainable=True,
             name="embeddings_vqvae",
@@ -33,9 +33,6 @@ class VectorQuantizer(layers.Layer):
         return config
 
     def call(self, x):
-        if x.dtype == tf.float16:
-            x = tf.cast(x, tf.float32)
-
         # Calculate the input shape of the inputs and
         # then flatten the inputs keeping `embedding_dim` intact.
         input_shape = tf.shape(x)
@@ -72,7 +69,7 @@ class VectorQuantizer(layers.Layer):
         )
 
         # Derive the indices for minimum distances.
-        encoding_indices = tf.argmin(distances, axis=1, output_type=tf.int32)
+        encoding_indices = tf.argmin(distances, axis=1)
         return encoding_indices
 
     def get_codebook_entry(self, indices, shape):

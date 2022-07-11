@@ -21,7 +21,6 @@ class Encoder(layers.Layer):
         **kwargs
     ):
         """Encode an image into a latent vector. The encoder will be constitued of multiple levels (lenght of `channels_multiplier`) with for each level `num_res_blocks` ResnetBlock.
-
         Args:
             channels (int, optional): The number of channel for the first layer. Defaults to 128.
             channels_multiplier (List[int], optional): The channel multiplier for each level (previous level channels X multipler). Defaults to [1, 1, 2, 2].
@@ -66,12 +65,11 @@ class Encoder(layers.Layer):
                 block_in = block_out
 
                 if current_resolution in attention_resolution:
-                    # attentions.append(layers.Attention())
                     self.downsampling_list.append(AttentionBlock(block_in))
-                    current_resolution = current_resolution // 2
 
             if i_level != self.num_resolutions - 1:
                 self.downsampling_list.append(Downsample(block_in))
+                current_resolution = current_resolution // 2
 
         # middle
         self.mid = {}

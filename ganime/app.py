@@ -12,9 +12,6 @@ from ray.tune.suggest.optuna import OptunaSearch
 
 from ganime.trainer.ganime import TrainableGANime
 
-os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"  # see issue #152
-os.environ["CUDA_VISIBLE_DEVICES"] = "0, 1, 2, 3, 4, 5"
-
 
 def get_metric_direction(metric: str):
     if "loss" in metric:
@@ -41,6 +38,7 @@ def get_search_space(model):
             "channels": tune.choice([64, 128, 256]),
             "attention_resolution": tune.choice([[16], [32], [16, 32]]),
             "batch_size": tune.choice([8, 16]),
+            "dropout": tune.choice([0.0, 0.1, 0.2]),
         }
 
 
@@ -121,12 +119,12 @@ def tune_ganime(
 )
 @click.option(
     "--num_gpus",
-    default=6,
+    default=8,
     help="Number of gpus to use",
 )
 @click.option(
     "--max_concurrent_trials",
-    default=6,
+    default=8,
     help="Maximum number of concurrent trials",
 )
 @click.option(
