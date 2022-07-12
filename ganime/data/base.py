@@ -210,6 +210,30 @@ def preprocess_image(element):
     element = tf.cast(element, tf.float32) / 255.0
     return element, element
 
+def load_kny_images_light(dataset_path, batch_size):
+    dataset_length = 34045
+    path = os.path.join(dataset_path, "kny", "images_tfrecords_light")
+    dataset = ImageDataset(path).load()
+    dataset = dataset.shuffle(1000, reshuffle_each_iteration=True).map(
+        preprocess_image, num_parallel_calls=tf.data.AUTOTUNE
+    )
+
+    train_size = int(dataset_length * 0.8)
+    validation_size = int(dataset_length * 0.1)
+
+    train_ds = dataset.take(train_size)
+    validation_ds = dataset.skip(train_size).take(validation_size)
+    test_ds = dataset.skip(train_size + validation_size).take(validation_size)
+
+    train_ds = train_ds.batch(batch_size, drop_remainder=True).prefetch(
+        tf.data.AUTOTUNE
+    )
+    validation_ds = validation_ds.batch(batch_size, drop_remainder=True).prefetch(
+        tf.data.AUTOTUNE
+    )
+    test_ds = test_ds.batch(batch_size, drop_remainder=True).prefetch(tf.data.AUTOTUNE)
+
+    return train_ds, validation_ds, test_ds
 
 def load_kny_images(dataset_path, batch_size):
     dataset_length = 52014
@@ -250,5 +274,7 @@ def load_dataset(
     #     return load_kny_images(dataset_path, batch_size)
     if dataset_name == "kny_images":
         return load_kny_images(dataset_path, batch_size)
+    if dataset_name == "kny_images_light":
+        return load_kny_images_light(dataset_path, batch_size)
     else:
         raise ValueError(f"Unknown dataset: {dataset_name}")

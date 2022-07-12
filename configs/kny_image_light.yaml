@@ -1,0 +1,36 @@
+model:
+  checkpoint_path: ../../../checkpoints/kny_image_light/checkpoint
+  vqvae_config:
+    beta: 0.25
+    num_embeddings: 64
+    embedding_dim: 256
+  autoencoder_config:
+    z_channels: 128
+    channels: 64
+    channels_multiplier: 
+    - 1
+    - 1 
+    - 2
+    - 2
+    - 4
+    num_res_blocks: 1
+    attention_resolution: 
+    - 16
+    resolution: 128
+    dropout: 0.1
+  discriminator_config:
+    num_layers: 3
+    filters: 64
+    
+  loss_config:
+    discriminator:
+      loss: "hinge"
+      factor: 1.0
+      iter_start: 625000
+      weight: 0.3
+    vqvae:
+      codebook_weight: 1.0
+
+trainer:
+  batch_size: 16
+

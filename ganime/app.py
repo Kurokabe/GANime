@@ -31,8 +31,8 @@ def trial_dirname_creator(trial):
 def get_search_space(model):
     if model == "vqgan":
         return {
-            "beta": tune.uniform(0.1, 1.0),
-            "num_embeddings": tune.choice([128, 256]),
+            # "beta": tune.uniform(0.1, 1.0),
+            "num_embeddings": tune.choice([64, 128, 256]),
             "embedding_dim": tune.choice([128, 256, 512, 1024]),
             "z_channels": tune.choice([64, 128, 256]),
             "channels": tune.choice([64, 128, 256]),
@@ -92,8 +92,8 @@ def tune_ganime(
 @click.command()
 @click.option(
     "--dataset",
-    type=click.Choice(["moving_mnist_images", "kny_images"], case_sensitive=False),
-    default="kny_images",
+    type=click.Choice(["moving_mnist_images", "kny_images", "kny_images_light"], case_sensitive=False),
+    default="kny_images_light",
     help="Dataset to use",
 )
 @click.option(
@@ -138,7 +138,7 @@ def tune_ganime(
 )
 @click.option(
     "--experiment_name",
-    default="kny_images",
+    default="kny_images_light",
     help="The name of the experiment for logging in Tensorboard",
 )
 @click.option(

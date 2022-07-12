@@ -1,4 +1,5 @@
 import os
+import numpy as np
 from omegaconf import OmegaConf
 import omegaconf
 from ray.tune import Trainable
@@ -69,6 +70,8 @@ class TrainableGANime(Trainable):
             verbose=0,
         )
         scores = self.model.evaluate(self.validation_dataset, verbose=0)
+        if np.nan in scores:
+            self.stop()
         return dict(zip(self.model.metrics_names, scores))
 
     def save_checkpoint(self, tmp_checkpoint_dir):
