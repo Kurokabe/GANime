@@ -20,11 +20,20 @@ services:
             - driver: nvidia
               count: all
               capabilities: [ gpu ]
-  tensorboard:
+  tensorboard_logs:
     image: tensorflow/tensorflow:2.7.0
-    container_name: tensorboard
+    container_name: tensorboard_logs
     volumes:
       - "./logs/ganime:/logs/ganime"
     ports:
-      - "6007:6006"
-    command: tensorboard --logdir=/logs/ganime --bind_all
+      - "6008:6008"
+    command: tensorboard --logdir=/logs/ganime --bind_all --port=6008
+  
+  tensorboard_ganime:
+    image: tensorflow/tensorflow:2.7.0
+    container_name: tensorboard_ganime_results
+    volumes:
+      - "./ganime_results:/ganime_results"
+    ports:
+      - "6009:6009"
+    command: tensorboard --logdir=/ganime_results --bind_all --port=6009
