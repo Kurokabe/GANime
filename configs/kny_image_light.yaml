@@ -1,5 +1,5 @@
 model:
-  checkpoint_path: ../../../checkpoints/kny_image_light/checkpoint
+  checkpoint_path: ../../../checkpoints/kny_image_light_discriminator/checkpoint
   vqvae_config:
     beta: 0.25
     num_embeddings: 64
@@ -26,7 +26,7 @@ model:
     discriminator:
       loss: "hinge"
       factor: 1.0
-      iter_start: 625000
+      iter_start: 16200
       weight: 0.3
     vqvae:
       codebook_weight: 1.0

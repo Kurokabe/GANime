@@ -30,11 +30,19 @@ def display_videos(data, n_rows=3, n_cols=3):
             for j in range(n_cols):
                 idx = i * n_cols + j
                 video = data[idx]
-                ims[idx].set_data(video[frame_id, :, :, :])
+                d = video[frame_id, :, :, :]
+                # if frame_id % 2 == 0:
+                #     d[0:2, :, 0] = 255
+                #     d[0:2, :, 1] = 0
+                #     d[0:2, :, 2] = 0
+                #     d[-2:, :, 0] = 255
+                #     d[-2:, :, 1] = 0
+                #     d[-2:, :, 2] = 0
+                ims[idx].set_data(d)
         return ims
 
     anim = animation.FuncAnimation(
-        fig, animate, init_func=init, frames=data.shape[1], blit=True, interval=150
+        fig, animate, init_func=init, frames=data.shape[1], blit=True, interval=200
     )
     # FFwriter = animation.FFMpegWriter(fps=10, codec="libx264")
     # anim.save("basic_animation1.mp4", writer=FFwriter)
