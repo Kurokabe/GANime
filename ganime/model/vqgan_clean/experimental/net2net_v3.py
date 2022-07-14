@@ -99,11 +99,20 @@ class Net2Net(Model):
 
         return self.predict_video(inputs, training, return_losses)
 
+    def get_remaining_frames(self, inputs):
+        if "remaining_frames" in inputs:
+            remaining_frames = inputs["remaining_frames"]
+        else:
+            raise NotImplementedError
+        remaining_frames = tf.cast(remaining_frames, tf.int64)
+        return remaining_frames
+
     @tf.function()
     def predict_video(self, inputs, training=False, return_losses=False):
         first_frame = inputs["first_frame"]
         last_frame = inputs["last_frame"]
         n_frames = tf.reduce_min(inputs["n_frames"])
+        remaining_frames = self.get_remaining_frames(inputs)
 
         try:
             ground_truth = inputs["y"]
@@ -136,6 +145,7 @@ class Net2Net(Model):
                 target_frame = None
 
             y_pred, losses = self.predict_next_frame(
+                remaining_frames[:, current_frame_index],
                 previous_frames,
                 last_frame,
                 indices_last,
@@ -176,6 +186,7 @@ class Net2Net(Model):
 
     def predict_next_frame(
         self,
+        remaining_frames,
         previous_frames,
         last_frame,
         indices_last,
@@ -212,6 +223,7 @@ class Net2Net(Model):
 
         if training:
             next_frame, losses = self.train_predict_next_frame(
+                remaining_frames,
                 indices_last,
                 indices_previous,
                 target_indices=target_indices,
@@ -221,6 +233,7 @@ class Net2Net(Model):
             )
         else:
             next_frame, losses = self.predict_next_frame_body(
+                remaining_frames,
                 indices_last,
                 indices_previous,
                 target_indices=target_indices,
@@ -233,6 +246,7 @@ class Net2Net(Model):
 
     def predict_next_frame_body(
         self,
+        remaining_frames,
         last_frame_indices,
         previous_frame_indices,
         quant_shape,
@@ -240,7 +254,9 @@ class Net2Net(Model):
         target_indices=None,
         target_frame=None,
     ):
-        logits = self.transformer((last_frame_indices, previous_frame_indices))
+        logits = self.transformer(
+            (remaining_frames, last_frame_indices, previous_frame_indices)
+        )
         next_frame = self.convert_logits_to_image(
             logits,
             quant_shape=quant_shape,
@@ -266,6 +282,7 @@ class Net2Net(Model):
 
     def train_predict_next_frame(
         self,
+        remaining_frames,
         last_frame_indices,
         previous_frame_indices,
         quant_shape,
@@ -275,6 +292,7 @@ class Net2Net(Model):
     ):
         with tf.GradientTape() as tape:
             next_frame, losses = self.predict_next_frame_body(
+                remaining_frames=remaining_frames,
                 last_frame_indices=last_frame_indices,
                 previous_frame_indices=previous_frame_indices,
                 target_indices=target_indices,
