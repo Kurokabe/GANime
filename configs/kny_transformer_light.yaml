@@ -1,6 +1,6 @@
 model:
   transformer_config:
-    checkpoint_path: ../../../checkpoints/kny_videos_light/checkpoint
+    #checkpoint_path: ../../../checkpoints/kny_videos_light/checkpoint
     vocab_size: 50257
     n_positions: 1024
     n_embd: 1024 #1280 #768
@@ -44,9 +44,10 @@ model:
 
 train:
   batch_size: 8
-  n_epochs: 3000
+  n_epochs: 200
   len_x_train: 631
   warmup_epoch_percentage: 0.15
   lr_start: 1e-5
   lr_max: 2.5e-4
   perceptual_loss_weight: 1.0
+  n_frames_before: 5

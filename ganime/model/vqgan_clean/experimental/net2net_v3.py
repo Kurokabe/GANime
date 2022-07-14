@@ -43,6 +43,8 @@ class Net2Net(Model):
             # run_eagerly=True,
         )
 
+        self.n_frames_before = trainer_config["n_frames_before"]
+
         # Gradient accumulation
         self.gradient_accumulation = [
             tf.Variable(tf.zeros_like(v, dtype=tf.float32), trainable=False)
@@ -144,14 +146,16 @@ class Net2Net(Model):
             predictions = predictions.write(current_frame_index, y_pred)
 
             if training:
-                start_index = tf.math.maximum(0, current_frame_index - PREVIOUS_FRAMES)
+                start_index = tf.math.maximum(
+                    0, current_frame_index - self.n_frames_before
+                )
                 previous_frames = ground_truth[
                     :, start_index + 1 : current_frame_index + 1
                 ]
             else:
                 previous_frames = predictions.stack()
                 previous_frames = tf.transpose(previous_frames, (1, 0, 2, 3, 4))
-                previous_frames = previous_frames[:, -PREVIOUS_FRAMES:]
+                previous_frames = previous_frames[:, -self.n_frames_before :]
 
             current_frame_index = tf.add(current_frame_index, 1)
             total_loss = tf.add(total_loss, losses[0])
