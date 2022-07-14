@@ -14,11 +14,14 @@ class Transformer(Model):
         last_frame_indices, previous_frame_indices = inputs
         # last_frame_indices = tf.expand_dims(last_frame_indices, axis=1)
         # previous_frame_indices = tf.expand_dims(previous_frame_indices, axis=1)
-        shape_to_keep = tf.shape(previous_frame_indices)[1]
+        # tf.print("last_frame_indices", tf.shape(last_frame_indices))
+        # tf.print("previous_frame_indices", tf.shape(previous_frame_indices))
+        shape_to_keep = tf.shape(last_frame_indices)[1]
         h = tf.concat([last_frame_indices, previous_frame_indices], axis=1)
 
         h = self.transformer(h[:, :-1], training=training)
         # h = h.logits
         h = h.last_hidden_state
         h = h[:, -shape_to_keep:]
+        # tf.print("h", tf.shape(h))
         return h

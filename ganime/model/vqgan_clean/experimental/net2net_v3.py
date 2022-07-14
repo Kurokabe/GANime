@@ -10,6 +10,8 @@ from tensorflow.keras import Model, layers
 from ganime.model.vqgan_clean.losses.losses import Losses
 from ganime.trainer.warmup.base import create_warmup_scheduler
 
+PREVIOUS_FRAMES = 5
+
 
 class Net2Net(Model):
     def __init__(
@@ -106,7 +108,7 @@ class Net2Net(Model):
         except AttributeError:
             ground_truth = None
 
-        previous_frame = first_frame
+        previous_frames = tf.expand_dims(first_frame, axis=1)
 
         predictions = tf.TensorArray(
             tf.float32, size=0, dynamic_size=True, clear_after_read=False
@@ -122,7 +124,7 @@ class Net2Net(Model):
         while tf.less(current_frame_index, n_frames):
             tf.autograph.experimental.set_loop_options(
                 shape_invariants=[
-                    (previous_frame, tf.TensorShape([None, None, None, 3]))
+                    (previous_frames, tf.TensorShape([None, None, None, None, 3]))
                 ],
             )
 
@@ -132,18 +134,24 @@ class Net2Net(Model):
                 target_frame = None
 
             y_pred, losses = self.predict_next_frame(
-                previous_frame,
+                previous_frames,
                 last_frame,
                 indices_last,
+                quant_last,
                 target_frame=target_frame,
                 training=training,
             )
             predictions = predictions.write(current_frame_index, y_pred)
 
             if training:
-                previous_frame = ground_truth[:, current_frame_index]
+                start_index = tf.math.maximum(0, current_frame_index - PREVIOUS_FRAMES)
+                previous_frames = ground_truth[
+                    :, start_index + 1 : current_frame_index + 1
+                ]
             else:
-                previous_frame = y_pred
+                previous_frames = predictions.stack()
+                previous_frames = tf.transpose(previous_frames, (1, 0, 2, 3, 4))
+                previous_frames = previous_frames[:, -PREVIOUS_FRAMES:]
 
             current_frame_index = tf.add(current_frame_index, 1)
             total_loss = tf.add(total_loss, losses[0])
@@ -164,13 +172,35 @@ class Net2Net(Model):
 
     def predict_next_frame(
         self,
-        previous_frame,
+        previous_frames,
         last_frame,
         indices_last,
+        quant_last,
         target_frame=None,
         training=False,
     ):
-        quant_previous, indices_previous = self.encode_to_z(previous_frame)
+        # previous frames is of shape (batch_size, n_frames, height, width, 3)
+        previous_frames = tf.transpose(previous_frames, (1, 0, 2, 3, 4))
+        # previous frames is now of shape (n_frames, batch_size, height, width, 3)
+
+        indices_previous = tf.map_fn(
+            lambda x: self.encode_to_z(x)[1],
+            previous_frames,
+            fn_output_signature=tf.int64,
+        )
+
+        # indices is of shape (n_frames, batch_size, n_z)
+        indices_previous = tf.transpose(indices_previous, (1, 0, 2))
+        # indices is now of shape (batch_size, n_frames, n_z)
+        batch_size, n_frames, n_z = (
+            tf.shape(indices_previous)[0],
+            tf.shape(indices_previous)[1],
+            tf.shape(indices_previous)[2],
+        )
+        indices_previous = tf.reshape(
+            indices_previous, shape=(batch_size, n_frames * n_z)
+        )
+
         if target_frame is not None:
             _, target_indices = self.encode_to_z(target_frame)
         else:
@@ -182,8 +212,8 @@ class Net2Net(Model):
                 indices_previous,
                 target_indices=target_indices,
                 target_frame=target_frame,
-                quant_shape=tf.shape(quant_previous),
-                indices_shape=tf.shape(indices_previous),
+                quant_shape=tf.shape(quant_last),
+                indices_shape=tf.shape(indices_last),
             )
         else:
             next_frame, losses = self.predict_next_frame_body(
@@ -191,8 +221,8 @@ class Net2Net(Model):
                 indices_previous,
                 target_indices=target_indices,
                 target_frame=target_frame,
-                quant_shape=tf.shape(quant_previous),
-                indices_shape=tf.shape(indices_previous),
+                quant_shape=tf.shape(quant_last),
+                indices_shape=tf.shape(indices_last),
             )
 
         return next_frame, losses
