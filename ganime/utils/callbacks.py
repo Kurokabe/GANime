@@ -131,6 +131,44 @@ class TensorboardVideo(tf.keras.callbacks.Callback):
     def write_to_tensorboard(self, y_true, y_pred, tag, step):
         stacked = tf.concat([y_pred, y_true], axis=2)
         self.video_summary(tag, stacked, step)
+        self.image_summary(tag + "/images", y_true, y_pred, step)
+
+    def image_summary(self, tag, y_true, y_pred, step):
+        batch, n_frames, height, width, channels = y_true.shape
+        images = np.empty(
+            (batch * 2, n_frames, height, width, channels), dtype=np.float32
+        )
+
+        images[0::2] = y_pred
+        images[1::2] = y_true
+        images = tf.transpose(images, (0, 2, 1, 3, 4))
+        images = tf.reshape(images, (height * batch * 2, width * n_frames, channels))
+
+        with self.file_writer.as_default():
+            tf.summary.image(tag, [images], step=step)
+
+    def add_red_border(self, image_batch):
+        image_batch = image_batch.copy()
+        dtype = image_batch.dtype
+        min_value = 0
+        max_value = 1 if dtype in [np.float16, np.float32, np.float64] else 255
+        # top
+        image_batch[:, 0:2, :, 0] = max_value
+        image_batch[:, 0:2, :, 1] = min_value
+        image_batch[:, 0:2, :, 2] = min_value
+        # bottom
+        image_batch[:, -2:, :, 0] = max_value
+        image_batch[:, -2:, :, 1] = min_value
+        image_batch[:, -2:, :, 2] = min_value
+        # left
+        image_batch[:, :, 0:2, 0] = max_value
+        image_batch[:, :, 0:2, 1] = min_value
+        image_batch[:, :, 0:2, 2] = min_value
+        # right
+        image_batch[:, :, -2:, 0] = max_value
+        image_batch[:, :, -2:, 1] = min_value
+        image_batch[:, :, -2:, 2] = min_value
+        return image_batch
 
     def video_summary(self, name, video, step=None, fps=10):
         name = tf.constant(name).numpy().decode("utf-8")
@@ -138,6 +176,7 @@ class TensorboardVideo(tf.keras.callbacks.Callback):
         if video.dtype in (np.float32, np.float64):
             video = np.clip(255 * video, 0, 255).astype(np.uint8)
         B, T, H, W, C = video.shape
+        # video[:, 0] = self.add_red_border(video[:, 0])
 
         with self.file_writer.as_default():
             try:
