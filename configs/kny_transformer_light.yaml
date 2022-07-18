@@ -1,14 +1,17 @@
 model:
   transformer_config:
     #checkpoint_path: ../../../checkpoints/kny_videos_light/checkpoint
-    vocab_size: 50257
-    n_positions: 1024
-    n_embd: 1024 #1280 #768
-    n_layer: 24 #36 #12
-    n_head: 16 #20 #12
-    resid_pdrop: 0.1
-    embd_pdrop: 0.1
-    attn_pdrop: 0.1
+    # vocab_size: 50257
+    # n_positions: 1024
+    # n_embd: 1024 #1280 #768
+    # n_layer: 24 #36 #12
+    # n_head: 16 #20 #12
+    # resid_pdrop: 0.1
+    # embd_pdrop: 0.1
+    # attn_pdrop: 0.1
+    # remaining_frames_method: "concat" 
+    # remaining_frames_method: "token_type_ids"
+    remaining_frames_method: "own_embeddings"
   first_stage_config:
     checkpoint_path: ../../../checkpoints/kny_image_light_discriminator/checkpoint
     vqvae_config:
