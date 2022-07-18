@@ -55,6 +55,7 @@ class VQGAN(keras.Model):
             ValueError: The specified loss type is not supported.
         """
         super().__init__(**kwargs)
+        self.perceptual_weight = loss_config.vqvae.perceptual_weight
         self.codebook_weight = loss_config.vqvae.codebook_weight
         self.vqvae_config = vqvae_config
         self.autoencoder_config = autoencoder_config
@@ -290,14 +291,11 @@ class VQGAN(keras.Model):
                 threshold=self.discriminator_iter_start,
             )
 
-            tmp_loss_1 = nll_loss
-            tmp_loss_2 = d_weight * disc_factor * g_loss
-            tmp_loss_3 = self.codebook_weight * quantized_loss
-
-            tmp_loss_4 = tmp_loss_1 + tmp_loss_2
-            tmp_loss_5 = tmp_loss_4 + tmp_loss_3
-
-            total_loss = tmp_loss_5
+            total_loss = (
+                self.perceptual_weight * nll_loss
+                + d_weight * disc_factor * g_loss
+                + self.codebook_weight * quantized_loss
+            )
 
             # total_loss = (
             #     nll_loss

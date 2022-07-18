@@ -30,7 +30,17 @@ model:
       weight: 0.3
     vqvae:
       codebook_weight: 1.0
+      perceptual_weight: 1.0
 
 trainer:
   batch_size: 16
+  gen_lr: 5e-4
+  disc_lr: 5e-5
+  gen_beta_1: 0.5
+  gen_beta_2: 0.9
+  disc_beta_1: 0.5
+  disc_beta_2: 0.9
+  gen_clip_norm: 1.0
+  disc_clip_norm: 1.0
+
 

@@ -12,6 +12,11 @@ from ray.tune.suggest.optuna import OptunaSearch
 
 from ganime.trainer.ganime import TrainableGANime
 
+import os
+
+os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"  # see issue #152
+os.environ["CUDA_VISIBLE_DEVICES"] = "1, 2, 3, 4, 5, 6"
+
 
 def get_metric_direction(metric: str):
     if "loss" in metric:
@@ -36,9 +41,39 @@ def get_search_space(model):
             "embedding_dim": tune.choice([128, 256, 512, 1024]),
             "z_channels": tune.choice([64, 128, 256]),
             "channels": tune.choice([64, 128, 256]),
+            "channels_multiplier": tune.choice(
+                [
+                    [1, 2, 4],
+                    [1, 1, 2, 2],
+                    [1, 2, 2, 4],
+                    [1, 1, 2, 2, 4],
+                ]
+            ),
             "attention_resolution": tune.choice([[16], [32], [16, 32]]),
             "batch_size": tune.choice([8, 16]),
             "dropout": tune.choice([0.0, 0.1, 0.2]),
+            "weight": tune.quniform(0.1, 1.0, 0.1),
+            "codebook_weight": tune.quniform(0.2, 2.0, 0.2),
+            "perceptual_weight": tune.quniform(0.5, 5.0, 0.5),
+            "gen_lr": tune.qloguniform(1e-5, 1e-3, 1e-5),
+            "disc_lr": tune.qloguniform(1e-5, 1e-3, 1e-5),
+            "gen_beta_1": tune.quniform(0.5, 0.9, 0.1),
+            "gen_beta_2": tune.quniform(0.9, 0.999, 0.001),
+            "disc_beta_1": tune.quniform(0.5, 0.9, 0.1),
+            "disc_beta_2": tune.quniform(0.9, 0.999, 0.001),
+            "gen_clip_norm": tune.choice([1.0, None]),
+            "disc_clip_norm": tune.choice([1.0, None]),
+        }
+    elif model == "gpt":
+        return {
+            "remaining_frames_method": tune.choice(
+                ["concat", "token_type_ids", "own_embeddings"]
+            ),
+            # "batch_size": tune.choice([8, 16]),
+            "lr_max": tune.qloguniform(1e-5, 1e-3, 5e-5),
+            "lr_start": tune.sample_from(lambda spec: spec.config.lr_max / 10),
+            "perceptual_loss_weight": tune.quniform(0.0, 1.0, 0.1),
+            "n_frames_before": tune.randint(1, 10),
         }
 
 
@@ -92,24 +127,26 @@ def tune_ganime(
 @click.command()
 @click.option(
     "--dataset",
-    type=click.Choice(["moving_mnist_images", "kny_images", "kny_images_light"], case_sensitive=False),
+    type=click.Choice(
+        ["moving_mnist_images", "kny_images", "kny_images_light"], case_sensitive=False
+    ),
     default="kny_images_light",
     help="Dataset to use",
 )
 @click.option(
     "--model",
-    type=click.Choice(["vqgan", "net2net"], case_sensitive=False),
+    type=click.Choice(["vqgan", "gpt"], case_sensitive=False),
     default="vqgan",
     help="Model to use",
 )
 @click.option(
     "--epochs",
-    default=300,
+    default=500,
     help="Number of epochs to run",
 )
 @click.option(
     "--num_samples",
-    default=50,
+    default=100,
     help="Total number of trials to run",
 )
 @click.option(
@@ -119,12 +156,12 @@ def tune_ganime(
 )
 @click.option(
     "--num_gpus",
-    default=8,
+    default=6,
     help="Number of gpus to use",
 )
 @click.option(
     "--max_concurrent_trials",
-    default=8,
+    default=6,
     help="Maximum number of concurrent trials",
 )
 @click.option(
@@ -138,7 +175,7 @@ def tune_ganime(
 )
 @click.option(
     "--experiment_name",
-    default="kny_images_light",
+    default="kny_images_light_v2",
     help="The name of the experiment for logging in Tensorboard",
 )
 @click.option(

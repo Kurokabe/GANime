@@ -214,7 +214,7 @@ def load_kny_images_light(dataset_path, batch_size):
     dataset_length = 34045
     path = os.path.join(dataset_path, "kny", "images_tfrecords_light")
     dataset = ImageDataset(path).load()
-    dataset = dataset.shuffle(1000, reshuffle_each_iteration=True).map(
+    dataset = dataset.shuffle(1000, reshuffle_each_iteration=True, seed=13).map(
         preprocess_image, num_parallel_calls=tf.data.AUTOTUNE
     )
 

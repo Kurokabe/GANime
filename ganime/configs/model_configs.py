@@ -48,6 +48,7 @@ class DiscriminatorLossConfig:
 @dataclass
 class VQVAELossConfig:
     codebook_weight: float
+    perceptual_weight: float
 
 
 @dataclass
