@@ -61,6 +61,11 @@ class Net2Net(Model):
         self.scce_loss_tracker = keras.metrics.Mean(name="scce_loss")
         self.perceptual_loss_tracker = keras.metrics.Mean(name="perceptual_loss")
 
+        self.epoch = 0
+        self.stop_ground_truth_after_epoch = trainer_config[
+            "stop_ground_truth_after_epoch"
+        ]
+
     def apply_accu_gradients(self):
         # apply accumulated gradients
         self.optimizer.apply_gradients(
@@ -111,7 +116,7 @@ class Net2Net(Model):
     def predict_video(self, inputs, training=False, return_losses=False):
         first_frame = inputs["first_frame"]
         last_frame = inputs["last_frame"]
-        n_frames = tf.reduce_min(inputs["n_frames"])
+        n_frames = tf.reduce_max(inputs["n_frames"])
         remaining_frames = self.get_remaining_frames(inputs)
 
         try:
@@ -155,7 +160,7 @@ class Net2Net(Model):
             )
             predictions = predictions.write(current_frame_index, y_pred)
 
-            if training:
+            if training and self.epoch < self.stop_ground_truth_after_epoch:
                 start_index = tf.math.maximum(
                     0, current_frame_index - self.n_frames_before
                 )
@@ -332,6 +337,7 @@ class Net2Net(Model):
         self.total_loss_tracker.update_state(total_loss)
         self.scce_loss_tracker.update_state(scce_loss)
         self.perceptual_loss_tracker.update_state(perceptual_loss)
+        self.epoch += 1
         return {m.name: m.result() for m in self.metrics}
 
     def test_step(self, data):

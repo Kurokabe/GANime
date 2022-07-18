@@ -18,11 +18,19 @@ class Transformer(Model):
         # tf.print("previous_frame_indices", tf.shape(previous_frame_indices))
         remaining_frames = tf.expand_dims(remaining_frames, axis=1)
         shape_to_keep = tf.shape(last_frame_indices)[1]
-        h = tf.concat(
-            [remaining_frames, last_frame_indices, previous_frame_indices], axis=1
+        h = tf.concat([last_frame_indices, previous_frame_indices], axis=1)
+
+        transformer_input = h[:, :-1]
+        mask = tf.ones_like(transformer_input) * tf.cast(
+            tf.cast(remaining_frames, dtype=tf.bool), dtype=remaining_frames.dtype
         )
 
-        h = self.transformer(h[:, :-1], training=training)
+        h = self.transformer(
+            transformer_input,
+            remaining_frames_ids=remaining_frames,
+            training=training,
+            attention_mask=mask,
+        )
         # h = h.logits
         h = h.last_hidden_state
         h = h[:, -shape_to_keep:]
