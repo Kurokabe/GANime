@@ -1,6 +1,6 @@
 model:
   transformer_config:
-    #checkpoint_path: ../../../checkpoints/kny_videos_light/checkpoint
+    checkpoint_path: ../../../checkpoints/kny_video_light/checkpoint
     # vocab_size: 50257
     # n_positions: 1024
     # n_embd: 1024 #1280 #768
@@ -31,7 +31,7 @@ model:
       attention_resolution: 
       - 16
       resolution: 128
-      dropout: 0.1
+      dropout: 0.0
     discriminator_config:
       num_layers: 3
       filters: 64
@@ -44,6 +44,8 @@ model:
         weight: 0.3
       vqvae:
         codebook_weight: 1.0
+        perceptual_weight: 4.0
+      perceptual_loss: "style"
 
 train:
   batch_size: 8

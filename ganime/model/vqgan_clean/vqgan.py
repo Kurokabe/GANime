@@ -2,6 +2,8 @@ from typing import List, Literal, Optional, Tuple
 
 import numpy as np
 import tensorflow as tf
+
+from ganime.model.vqgan_clean.losses.losses import Losses
 from .discriminator.model import NLayerDiscriminator
 from .losses.vqperceptual import PerceptualLoss
 from .vqvae.quantize import VectorQuantizer
@@ -95,7 +97,9 @@ class VQGAN(keras.Model):
 
         self.decoder = Decoder(**autoencoder_config)
 
-        self.perceptual_loss = PerceptualLoss(reduction=tf.keras.losses.Reduction.NONE)
+        self.perceptual_loss = self.get_perceptual_loss(
+            loss_config.perceptual_loss
+        )  # PerceptualLoss(reduction=tf.keras.losses.Reduction.NONE)
 
         # Setup discriminator and params
         self.discriminator = NLayerDiscriminator(
@@ -121,6 +125,17 @@ class VQGAN(keras.Model):
         self.disc_optimizer: Optimizer = None
 
         self.checkpoint_path = checkpoint_path
+
+    def get_perceptual_loss(self, loss_type: str):
+        num_replicas = 1  # TODO use as parameter
+        if loss_type == "vgg16":
+            return PerceptualLoss(reduction=tf.keras.losses.Reduction.NONE)
+        elif loss_type == "vgg19":
+            return Losses(num_replicas).vgg_loss
+        elif loss_type == "style":
+            return Losses(num_replicas).style_loss
+        else:
+            raise ValueError(f"Unknown loss type: {loss_type}")
 
     def load_from_checkpoint(self, path):
         self.load_weights(path)

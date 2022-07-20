@@ -1,18 +1,16 @@
 model:
-  checkpoint_path: ../../../checkpoints/kny_image_light_discriminator/checkpoint
+  # checkpoint_path: ../../../checkpoints/kny_image_vgg19/checkpoint
   vqvae_config:
     beta: 0.25
-    num_embeddings: 64
+    num_embeddings: 50257
     embedding_dim: 256
   autoencoder_config:
-    z_channels: 128
-    channels: 64
+    z_channels: 256
+    channels: 32
     channels_multiplier: 
-    - 1
-    - 1 
-    - 2
-    - 2
     - 4
+    - 8 
+    - 8
     num_res_blocks: 1
     attention_resolution: 
     - 16
@@ -26,22 +24,22 @@ model:
     discriminator:
       loss: "hinge"
       factor: 1.0
-      iter_start: 16200
-      weight: 0.3
+      iter_start: 53000
+      weight: 1.0
     vqvae:
       codebook_weight: 1.0
-      perceptual_weight: 1.0
-    perceptual_loss: "style" # "vgg16", "vgg19", "style"
+      perceptual_weight: 4.0
+    perceptual_loss: "vgg19" # "vgg16", "vgg19", "style"
 
 trainer:
-  batch_size: 16
-  gen_lr: 5e-4
-  disc_lr: 5e-5
+  batch_size: 32
+  n_epochs: 2000
+  gen_lr: 3e-5
+  disc_lr: 3e-5
   gen_beta_1: 0.5
   gen_beta_2: 0.9
   disc_beta_1: 0.5
   disc_beta_2: 0.9
   gen_clip_norm: 1.0
   disc_clip_norm: 1.0
-
 

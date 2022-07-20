@@ -210,13 +210,14 @@ def preprocess_image(element):
     element = tf.cast(element, tf.float32) / 255.0
     return element, element
 
+
 def load_kny_images_light(dataset_path, batch_size):
     dataset_length = 34045
     path = os.path.join(dataset_path, "kny", "images_tfrecords_light")
     dataset = ImageDataset(path).load()
-    dataset = dataset.shuffle(1000, reshuffle_each_iteration=True, seed=13).map(
-        preprocess_image, num_parallel_calls=tf.data.AUTOTUNE
-    )
+    dataset = dataset.shuffle(
+        dataset_length, reshuffle_each_iteration=True, seed=10
+    ).map(preprocess_image, num_parallel_calls=tf.data.AUTOTUNE)
 
     train_size = int(dataset_length * 0.8)
     validation_size = int(dataset_length * 0.1)
@@ -235,11 +236,12 @@ def load_kny_images_light(dataset_path, batch_size):
 
     return train_ds, validation_ds, test_ds
 
+
 def load_kny_images(dataset_path, batch_size):
     dataset_length = 52014
     path = os.path.join(dataset_path, "kny", "images_tfrecords")
     dataset = ImageDataset(path).load()
-    dataset = dataset.shuffle(1000, reshuffle_each_iteration=True).map(
+    dataset = dataset.shuffle(dataset_length, reshuffle_each_iteration=True).map(
         preprocess_image, num_parallel_calls=tf.data.AUTOTUNE
     )
 

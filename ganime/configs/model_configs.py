@@ -55,6 +55,7 @@ class VQVAELossConfig:
 class LossConfig:
     discriminator: DiscriminatorLossConfig
     vqvae: VQVAELossConfig
+    perceptual_loss: str
 
 
 @dataclass

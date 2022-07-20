@@ -50,7 +50,7 @@ class TensorboardImage(tf.keras.callbacks.Callback):
         logdir: str,
         train: np.array,
         validation: np.array = None,
-        n_images: int = 5,
+        n_images: int = 8,
     ):
         super().__init__()
         self.logdir = logdir

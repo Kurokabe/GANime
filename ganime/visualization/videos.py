@@ -1,10 +1,20 @@
 import matplotlib.pyplot as plt
-from matplotlib import animation
+import numpy as np
 from IPython.display import HTML
+from matplotlib import animation
 
 
-def display_videos(data, n_rows=3, n_cols=3):
-    fig, axs = plt.subplots(nrows=n_rows, ncols=n_cols, squeeze=False)
+def display_videos(data, ground_truth=None, n_rows=3, n_cols=3):
+
+    if ground_truth is not None:
+        data = np.concatenate((data, ground_truth), axis=2)
+
+    fig, axs = plt.subplots(nrows=n_rows, ncols=n_cols, squeeze=False, figsize=(16, 9))
+
+    # remove grid and ticks
+    plt.setp(axs, xticks=[], yticks=[])
+    plt.subplots_adjust(wspace=0, hspace=0)
+
     ims = []
 
     for i in range(n_rows):

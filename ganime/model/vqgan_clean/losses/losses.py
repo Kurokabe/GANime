@@ -1,18 +1,23 @@
+import os
+
 import tensorflow as tf
+from pyprojroot.pyprojroot import here
+from tensorflow import reduce_mean
+from tensorflow.keras import Model
+from tensorflow.keras.applications import VGG19
+from tensorflow.keras.applications.vgg19 import preprocess_input
 from tensorflow.keras.losses import (
+    Loss,
     MeanSquaredError,
     Reduction,
     SparseCategoricalCrossentropy,
 )
-from tensorflow import reduce_mean
-from tensorflow.keras.losses import Loss
-from tensorflow.keras.applications import VGG19
-from tensorflow.keras.applications.vgg19 import preprocess_input
-from tensorflow.keras import Model
+
+from . import vgg19_loss as vgg19
 
 
 class Losses:
-    def __init__(self, num_replicas):
+    def __init__(self, num_replicas: int = 1, vgg_model_file: str = None):
         self.num_replicas = num_replicas
         self.SCCE = SparseCategoricalCrossentropy(
             from_logits=True, reduction=Reduction.NONE
@@ -21,6 +26,11 @@ class Losses:
 
         self.vgg = VGG.build()
         self.preprocess = preprocess_input
+        self.vgg_model_file = (
+            os.path.join(here(), "models", "vgg19", "imagenet-vgg-verydeep-19.mat")
+            if vgg_model_file is None
+            else vgg_model_file
+        )
 
     def perceptual_loss(self, real, pred):
         y_true_preprocessed = self.preprocess(real)
@@ -46,6 +56,18 @@ class Losses:
         # compute reduced mean over the entire batch
         loss = reduce_mean(loss) * (1.0 / self.num_replicas)
         # return reduced mse loss
+        return loss
+
+    def vgg_loss(self, real, pred):
+        loss = vgg19.vgg_loss(pred, real, vgg_model_file=self.vgg_model_file)
+        return loss
+
+    def style_loss(self, real, pred):
+        loss = vgg19.style_loss(
+            pred,
+            real,
+            vgg_model_file=self.vgg_model_file,
+        )
         return loss
 
 

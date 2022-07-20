@@ -33,7 +33,8 @@ class NLayerDiscriminator(Model):
                 layers.Conv2D(
                     filters * filters_mult,
                     kernel_size=kernel_size,
-                    strides=1,  # 2,
+                    # strides=1,  # 2,
+                    strides=2,
                     padding="same",
                     use_bias=False,
                 ),
