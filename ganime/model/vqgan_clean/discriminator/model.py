@@ -6,7 +6,6 @@ from tensorflow.keras import Model, Sequential
 from tensorflow.keras import layers
 
 
-@tf.keras.utils.register_keras_serializable()
 class NLayerDiscriminator(Model):
     """Defines a PatchGAN discriminator as in Pix2Pix
     --> see https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix/blob/master/models/networks.py
@@ -20,7 +19,7 @@ class NLayerDiscriminator(Model):
 
         kernel_size = 4
         self.sequence = [
-            layers.Conv2D(filters, kernel_size=kernel_size, padding="same"),
+            layers.Conv2D(filters, kernel_size=kernel_size, strides=1, padding="same"),
             layers.LeakyReLU(alpha=0.2),
         ]
 
@@ -33,8 +32,8 @@ class NLayerDiscriminator(Model):
                 layers.Conv2D(
                     filters * filters_mult,
                     kernel_size=kernel_size,
-                    # strides=1,  # 2,
-                    strides=2,
+                    strides=1,  # 2,
+                    # strides=2,
                     padding="same",
                     use_bias=False,
                 ),
@@ -44,6 +43,7 @@ class NLayerDiscriminator(Model):
 
         filters_mult = min(2**n_layers, 8)
         self.sequence += [
+            layers.AveragePooling2D(pool_size=2),
             layers.Conv2D(
                 filters * filters_mult,
                 kernel_size=kernel_size,
