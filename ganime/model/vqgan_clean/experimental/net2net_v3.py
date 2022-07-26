@@ -50,6 +50,7 @@ class Net2Net(Model):
             tf.Variable(tf.zeros_like(v, dtype=tf.float32), trainable=False)
             for v in self.transformer.trainable_variables
         ]
+        self.accumulation_size = trainer_config["accumulation_size"]
 
         # Losses
         self.perceptual_loss_weight = trainer_config["perceptual_loss_weight"]
@@ -329,14 +330,26 @@ class Net2Net(Model):
         return self.first_stage_model.decode(quant)
 
     def train_step(self, data):
-        _, total_loss, scce_loss, perceptual_loss = self(
-            data, training=True, return_losses=True
-        )
+
+        batch_total_loss, batch_scce_loss, batch_perceptual_loss = 0.0, 0.0, 0.0
+        for i in range(self.accumulation_size):
+            sub_data = {
+                key: value[
+                    self.accumulation_size * i : self.accumulation_size * (i + 1)
+                ]
+                for key, value in data.items()
+            }
+            _, total_loss, scce_loss, perceptual_loss = self(
+                sub_data, training=True, return_losses=True
+            )
+            batch_total_loss += total_loss
+            batch_scce_loss += scce_loss
+            batch_perceptual_loss += perceptual_loss
 
         self.apply_accu_gradients()
-        self.total_loss_tracker.update_state(total_loss)
-        self.scce_loss_tracker.update_state(scce_loss)
-        self.perceptual_loss_tracker.update_state(perceptual_loss)
+        self.total_loss_tracker.update_state(batch_total_loss)
+        self.scce_loss_tracker.update_state(batch_scce_loss)
+        self.perceptual_loss_tracker.update_state(batch_perceptual_loss)
         self.epoch += 1
         return {m.name: m.result() for m in self.metrics}
 
