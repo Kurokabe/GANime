@@ -85,5 +85,6 @@ class Transformer(Model):
 
         h = self.call_transformer(transformer_input, remaining_frames, training, mask)
         h = h.last_hidden_state
+        h = self.transformer.transformer.wte(h, mode="linear")
         h = h[:, -shape_to_keep:]
         return h
