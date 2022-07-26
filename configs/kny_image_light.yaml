@@ -2,7 +2,7 @@ model:
   checkpoint_path: ../../../checkpoints/kny_image_light_discriminator/checkpoint
   vqvae_config:
     beta: 0.25
-    num_embeddings: 64
+    num_embeddings: 128
     embedding_dim: 256
   autoencoder_config:
     z_channels: 128

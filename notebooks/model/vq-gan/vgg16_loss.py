@@ -18,7 +18,6 @@ import sys
 sys.path.append("../../../")
 
 
-
 # policy = mixed_precision.Policy('mixed_float16')
 # mixed_precision.set_global_policy(policy)
 # print('Compute dtype: %s' % policy.compute_dtype)
@@ -58,12 +57,10 @@ strategy = tf.distribute.MirroredStrategy(cross_device_ops=tf.distribute.Hierarc
 # In[7]:
 
 
-
-# In[8]:
-
-
 cfg = omegaconf.OmegaConf.load(here("configs/kny_image_vgg16.yaml"))
 
+
+# In[8]:
 
 
 num_workers = len(tf.config.list_physical_devices("GPU"))
@@ -71,6 +68,8 @@ batch_size = cfg["trainer"]["batch_size"]
 global_batch_size = batch_size * strategy.num_replicas_in_sync
 n_epochs = cfg["trainer"]["n_epochs"] 
 sample_batch_size = 8
+
+
 # In[9]:
 
 
@@ -136,7 +135,7 @@ test_ds = (test_ds.batch(global_batch_size, drop_remainder=True)
 
 from ganime.utils.callbacks import TensorboardImage, get_logdir
 
-logdir = get_logdir("../../../logs/ganime/vqgan", experiment_name="vgg16_loss")
+logdir = get_logdir("../../../logs/ganime/vqgan", experiment_name="vgg16_loss_final")
 # Define the basic TensorBoard callback.
 tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=logdir)
 tensorboard_image_callback = TensorboardImage(logdir, train_sample_data, validation_sample_data)
@@ -147,7 +146,7 @@ early_stopping = tf.keras.callbacks.EarlyStopping(
     restore_best_weights=True,
 )
 checkpointing = tf.keras.callbacks.ModelCheckpoint(os.path.join(logdir, "checkpoint", "checkpoint"), monitor='val_total_loss', save_best_only=True, save_weights_only=True)
-callbacks = [tensorboard_callback, tensorboard_image_callback, early_stopping, checkpointing]
+callbacks = [tensorboard_callback, tensorboard_image_callback, checkpointing]
 
 
 # In[17]:
