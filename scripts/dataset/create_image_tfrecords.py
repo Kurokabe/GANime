@@ -90,7 +90,7 @@ def resize_images(images: np.ndarray, width: int, height: int) -> np.ndarray:
         resized = skimage.transform.resize(
             images[i], (height, width), anti_aliasing=True
         )
-        resized = resized.astype(np.uint8)
+        resized = (resized * 255).astype(np.uint8)
         resized_images[i] = resized
     return resized_images
 
