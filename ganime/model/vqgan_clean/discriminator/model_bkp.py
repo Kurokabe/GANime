@@ -4,7 +4,6 @@ import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import Model, Sequential
 from tensorflow.keras import layers
-from tensorflow.keras.initializers import RandomNormal
 
 
 class NLayerDiscriminator(Model):
@@ -15,21 +14,12 @@ class NLayerDiscriminator(Model):
     def __init__(self, filters: int = 64, n_layers: int = 3, **kwargs):
         super().__init__(**kwargs)
 
-        init = RandomNormal(stddev=0.02)
         self.filters = filters
         self.n_layers = n_layers
 
         kernel_size = 4
         self.sequence = [
-            # layers.AveragePooling2D(pool_size=2),
-            layers.Conv2D(
-                filters,
-                kernel_size=kernel_size,
-                strides=2,
-                # strides=1,
-                padding="same",
-                kernel_initializer=init,
-            ),
+            layers.Conv2D(filters, kernel_size=kernel_size, strides=1, padding="same"),
             layers.LeakyReLU(alpha=0.2),
         ]
 
@@ -38,15 +28,14 @@ class NLayerDiscriminator(Model):
             filters_mult = min(2**n, 8)
 
             self.sequence += [
-                # layers.AveragePooling2D(pool_size=2),
+                layers.AveragePooling2D(pool_size=2),
                 layers.Conv2D(
                     filters * filters_mult,
                     kernel_size=kernel_size,
-                    # strides=1,  # 2,
-                    strides=2,
+                    strides=1,  # 2,
+                    # strides=2,
                     padding="same",
                     use_bias=False,
-                    kernel_initializer=init,
                 ),
                 layers.BatchNormalization(),
                 layers.LeakyReLU(alpha=0.2),
@@ -54,28 +43,20 @@ class NLayerDiscriminator(Model):
 
         filters_mult = min(2**n_layers, 8)
         self.sequence += [
-            # layers.AveragePooling2D(pool_size=2),
+            layers.AveragePooling2D(pool_size=2),
             layers.Conv2D(
                 filters * filters_mult,
                 kernel_size=kernel_size,
                 strides=1,
                 padding="same",
                 use_bias=False,
-                kernel_initializer=init,
             ),
             layers.BatchNormalization(),
             layers.LeakyReLU(alpha=0.2),
         ]
 
         self.sequence += [
-            layers.Conv2D(
-                1,
-                kernel_size=kernel_size,
-                strides=1,
-                padding="same",
-                # activation="sigmoid",
-                kernel_initializer=init,
-            ),
+            layers.Conv2D(1, kernel_size=kernel_size, strides=1, padding="same")
         ]
 
     def call(self, inputs, training=True, mask=None):
