@@ -161,7 +161,7 @@ class Upsample(layers.Layer):
     def __init__(self, channels, **kwargs):
         super().__init__(**kwargs)
         self.channels = channels
-        self.up_sample = layers.UpSampling2D(size=2, interpolation="nearest")
+        self.up_sample = layers.UpSampling2D(size=2, interpolation="bilinear")
         self.conv = layers.Conv2D(channels, kernel_size=3, strides=1, padding="same")
 
     def get_config(self):
