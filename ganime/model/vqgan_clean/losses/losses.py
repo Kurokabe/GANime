@@ -11,6 +11,7 @@ from tensorflow.keras.losses import (
     MeanSquaredError,
     Reduction,
     SparseCategoricalCrossentropy,
+    BinaryCrossentropy
 )
 
 from . import vgg19_loss as vgg19
@@ -23,6 +24,7 @@ class Losses:
             from_logits=True, reduction=Reduction.NONE
         )
         self.MSE = MeanSquaredError(reduction=Reduction.NONE)
+        self.BCE = BinaryCrossentropy(from_logits=True, reduction=Reduction.NONE)
 
         self.vgg = VGG.build()
         self.preprocess = preprocess_input
@@ -31,6 +33,14 @@ class Losses:
             if vgg_model_file is None
             else vgg_model_file
         )
+
+    def bce_loss(self, real, pred):
+        # compute binary cross entropy loss without reduction
+        loss = self.BCE(real, pred)
+        # compute reduced mean over the entire batch
+        loss = reduce_mean(loss) * (1.0 / self.num_replicas)
+        # return reduced bce loss
+        return loss
 
     def perceptual_loss(self, real, pred):
         y_true_preprocessed = self.preprocess(real)
