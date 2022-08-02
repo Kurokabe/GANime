@@ -19,7 +19,7 @@ def display_videos(data, ground_truth=None, n_rows=3, n_cols=3):
 
     for i in range(n_rows):
         for j in range(n_cols):
-            idx = i * n_rows + j
+            idx = i * n_cols + j
             video = data[idx]
             im = axs[i][j].imshow(video[0, :, :, :], animated=True)
             ims.append(im)
