@@ -147,7 +147,10 @@ class Dataset(ABC):
         return tf.data.TFRecordDataset(path)
 
     def _load_folder(self, path) -> tf.data.TFRecordDataset:
-        return tf.data.TFRecordDataset(glob.glob(os.path.join(path, "*.tfrecords*")))
+
+        return tf.data.TFRecordDataset(
+            glob.glob(os.path.join(path, "**/*.tfrecords*"), recursive=True)
+        )
 
 
 class VideoDataset(Dataset):
