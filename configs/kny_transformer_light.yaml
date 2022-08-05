@@ -49,6 +49,7 @@ model:
 
 train:
   batch_size: 8
+  accumulation_size: 8
   n_epochs: 2000
   len_x_train: 631
   warmup_epoch_percentage: 0.15

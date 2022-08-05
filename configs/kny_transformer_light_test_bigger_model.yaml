@@ -1,6 +1,6 @@
 model:
   transformer_config:
-    # checkpoint_path: ../../../checkpoints/kny_video_light/checkpoint
+    checkpoint_path: ../../../checkpoints/kny_video_full/checkpoint
     # vocab_size: 50257
     # n_positions: 1024
     # n_embd: 1024 #1280 #768
@@ -13,7 +13,7 @@ model:
     # remaining_frames_method: "token_type_ids"
     remaining_frames_method: "own_embeddings"
   first_stage_config:
-    checkpoint_path: ../../../checkpoints/kny_image_light_vgg19_bigger/checkpoint
+    checkpoint_path: ../../../checkpoints/kny_image_full_no_disc/checkpoint
     vqvae_config:
       beta: 0.25
       num_embeddings: 50257
@@ -55,5 +55,5 @@ train:
   lr_start: 1e-5
   lr_max: 2.5e-4
   perceptual_loss_weight: 1.0
-  n_frames_before: 1
+  n_frames_before: 5
   stop_ground_truth_after_epoch: 100

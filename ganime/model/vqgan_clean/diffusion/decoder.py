@@ -92,7 +92,7 @@ class Decoder(layers.Layer):
             output_channels,
             kernel_size=3,
             strides=1,
-            activation="sigmoid",
+            activation="tanh",
             padding="same",
         )
 

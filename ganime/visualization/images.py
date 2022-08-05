@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 import numpy as np
+import tensorflow as tf
 
 
 def display_images(data, n_rows=3, n_cols=3):
@@ -11,9 +12,23 @@ def display_images(data, n_rows=3, n_cols=3):
     return figure
 
 
+def unnormalize_if_necessary(x):
+    if isinstance(x, np.ndarray):
+        if x.min() < 0:
+
+            return (x * 0.5) + 0.5
+    elif isinstance(x, tf.Tensor):
+        if x.numpy().min() < 0:
+            return (x * 0.5) + 0.5
+    return x
+
+
 def display_true_pred(y_true, y_pred, n_cols=3):
 
     fig = plt.figure(constrained_layout=True, figsize=(24, 12))
+
+    y_true = unnormalize_if_necessary(y_true)
+    y_pred = unnormalize_if_necessary(y_pred)
 
     images = [y_pred, y_true]
 

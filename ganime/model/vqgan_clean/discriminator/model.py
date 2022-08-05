@@ -20,69 +20,62 @@ class NLayerDiscriminator(Model):
         self.n_layers = n_layers
 
         kernel_size = 4
-        self.sequence = [
-            # layers.AveragePooling2D(pool_size=2),
-            layers.Conv2D(
-                filters,
-                kernel_size=kernel_size,
-                strides=2,
-                # strides=1,
-                padding="same",
-                kernel_initializer=init,
-            ),
-            layers.LeakyReLU(alpha=0.2),
-        ]
+
+        inp = tf.keras.layers.Input(shape=[256, 512, 3], name="input_image")
+        tar = tf.keras.layers.Input(shape=[256, 512, 3], name="target_image")
+
+        x = tf.keras.layers.concatenate([inp, tar])
+
+        x = layers.Conv2D(
+            filters,
+            kernel_size=kernel_size,
+            strides=2,
+            # strides=1,
+            padding="same",
+            kernel_initializer=init,
+        )(x)
+        x = layers.LeakyReLU(alpha=0.2)(x)
 
         filters_mult = 1
         for n in range(1, n_layers):
             filters_mult = min(2**n, 8)
 
-            self.sequence += [
-                # layers.AveragePooling2D(pool_size=2),
-                layers.Conv2D(
-                    filters * filters_mult,
-                    kernel_size=kernel_size,
-                    # strides=1,  # 2,
-                    strides=2,
-                    padding="same",
-                    use_bias=False,
-                    kernel_initializer=init,
-                ),
-                layers.BatchNormalization(),
-                layers.LeakyReLU(alpha=0.2),
-            ]
-
-        filters_mult = min(2**n_layers, 8)
-        self.sequence += [
-            # layers.AveragePooling2D(pool_size=2),
-            layers.Conv2D(
+            x = layers.Conv2D(
                 filters * filters_mult,
                 kernel_size=kernel_size,
-                strides=1,
+                # strides=1,  # 2,
+                strides=2,
                 padding="same",
                 use_bias=False,
                 kernel_initializer=init,
-            ),
-            layers.BatchNormalization(),
-            layers.LeakyReLU(alpha=0.2),
-        ]
+            )(x)
+            x = layers.BatchNormalization()(x)
+            x = layers.LeakyReLU(alpha=0.2)(x)
 
-        self.sequence += [
-            layers.Conv2D(
-                1,
-                kernel_size=kernel_size,
-                strides=1,
-                padding="same",
-                # activation="sigmoid",
-                kernel_initializer=init,
-            ),
-        ]
+        filters_mult = min(2**n_layers, 8)
+        x = layers.Conv2D(
+            filters * filters_mult,
+            kernel_size=kernel_size,
+            strides=1,
+            padding="same",
+            use_bias=False,
+            kernel_initializer=init,
+        )(x)
+        x = layers.BatchNormalization()(x)
+        x = layers.LeakyReLU(alpha=0.2)(x)
+
+        x = layers.Conv2D(
+            1,
+            kernel_size=kernel_size,
+            strides=1,
+            padding="same",
+            # activation="sigmoid",
+            kernel_initializer=init,
+        )(x)
+        self.model = tf.keras.Model(inputs=[inp, tar], outputs=x)
 
     def call(self, inputs, training=True, mask=None):
-        h = inputs
-        for seq in self.sequence:
-            h = seq(h)
-        return h
+        return self.model(inputs)
 
     def get_config(self):
         config = super().get_config()
