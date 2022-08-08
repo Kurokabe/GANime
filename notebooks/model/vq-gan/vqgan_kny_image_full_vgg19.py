@@ -6,7 +6,7 @@
 
 import os
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"   # see issue #152
-os.environ["CUDA_VISIBLE_DEVICES"]="0, 1, 2, 3, 4, 5, 6, 7"
+os.environ["CUDA_VISIBLE_DEVICES"]="0, 1, 2, 3"
 os.environ["NCCL_DEBUG"]="WARN"
 #os.environ["NCCL_P2P_LEVEL"]="NODE"
 
@@ -53,7 +53,7 @@ strategy = tf.distribute.MirroredStrategy(cross_device_ops=tf.distribute.Hierarc
 # In[7]:
 
 
-cfg = omegaconf.OmegaConf.load(here("configs/kny_image_full.yaml"))
+cfg = omegaconf.OmegaConf.load(here("configs/kny_image_full_vgg19.yaml"))
 
 
 # In[8]:
@@ -170,7 +170,7 @@ test_ds = (test_ds.batch(global_batch_size, drop_remainder=True)
 
 from ganime.utils.callbacks import TensorboardImage, get_logdir
 
-logdir = "../../../logs/ganime/vqgan/kny_full_data_augment_2022-08-02_03-45-44" #get_logdir("../../../logs/ganime/vqgan", experiment_name="kny_full_data_augment")
+logdir = get_logdir("../../../logs/ganime/vqgan", experiment_name="kny_full_data_augment_vgg19_no_disc")
 # Define the basic TensorBoard callback.
 tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=logdir)
 tensorboard_image_callback = TensorboardImage(logdir, train_sample_data, validation_sample_data)
@@ -225,7 +225,7 @@ with strategy.scope():
 # In[24]:
 
 
-history = vqgan.fit(train_ds, validation_data=validation_ds, initial_epoch=351, epochs=n_epochs, callbacks=callbacks)
+history = vqgan.fit(train_ds, validation_data=validation_ds, epochs=n_epochs, callbacks=callbacks)
 
 
 

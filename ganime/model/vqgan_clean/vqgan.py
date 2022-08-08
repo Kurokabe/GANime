@@ -129,6 +129,7 @@ class VQGAN(keras.Model):
         self.checkpoint_path = checkpoint_path
 
         self.cross_entropy = Losses(self.num_replicas).bce_loss
+        self.reconstruction_loss = self.get_reconstruction_loss("mae")
 
     def get_perceptual_loss(self, loss_type: str):
         if loss_type == "vgg16":
@@ -137,8 +138,14 @@ class VQGAN(keras.Model):
             return Losses(self.num_replicas).vgg_loss
         elif loss_type == "style":
             return Losses(self.num_replicas).style_loss
-        elif loss_type == "mse":
+        else:
+            raise ValueError(f"Unknown loss type: {loss_type}")
+
+    def get_reconstruction_loss(self, loss_type: str):
+        if loss_type == "mse":
             return Losses(self.num_replicas).mse_loss
+        elif loss_type == "mae":
+            return Losses(self.num_replicas).mae_loss
         else:
             raise ValueError(f"Unknown loss type: {loss_type}")
 
@@ -402,9 +409,18 @@ class VQGAN(keras.Model):
                     training=True,
                 )
 
+                reconstruction_loss = self.reconstruction_loss(y, reconstructions)
+                if self.perceptual_weight > 0.0:
+                    perceptual_loss = self.perceptual_weight * self.perceptual_loss(
+                        y, reconstructions
+                    )
+                else:
+                    perceptual_loss = 0.0
+
+                nll_loss = reconstruction_loss + perceptual_loss
+
                 g_loss = -tf.reduce_mean(logits_fake)
                 # g_loss = self.generator_loss(logits_fake)
-                nll_loss = self.perceptual_loss(y, reconstructions)
 
             d_weight = self.calculate_adaptive_weight(
                 nll_loss,
@@ -423,7 +439,7 @@ class VQGAN(keras.Model):
             )
 
             total_loss = (
-                self.perceptual_weight * nll_loss
+                nll_loss
                 + d_weight * disc_factor * g_loss
                 + self.codebook_weight * quantized_loss
             )
@@ -614,9 +630,17 @@ class VQGAN(keras.Model):
                 training=False,
             )
 
+            reconstruction_loss = self.reconstruction_loss(y, reconstructions)
+            if self.perceptual_weight > 0.0:
+                perceptual_loss = self.perceptual_weight * self.perceptual_loss(
+                    y, reconstructions
+                )
+            else:
+                perceptual_loss = 0.0
+
+            nll_loss = reconstruction_loss + perceptual_loss
             g_loss = -tf.reduce_mean(logits_fake)
             # g_loss = self.generator_loss(logits_fake)
-            nll_loss = self.perceptual_loss(y, reconstructions)
 
         d_weight = self.calculate_adaptive_weight(
             nll_loss,
@@ -635,7 +659,7 @@ class VQGAN(keras.Model):
         )
 
         total_loss = (
-            self.perceptual_weight * nll_loss
+            nll_loss
             + d_weight * disc_factor * g_loss
             + self.codebook_weight * quantized_loss
         )

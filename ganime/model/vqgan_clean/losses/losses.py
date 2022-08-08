@@ -11,7 +11,7 @@ from tensorflow.keras.losses import (
     MeanSquaredError,
     Reduction,
     SparseCategoricalCrossentropy,
-    BinaryCrossentropy
+    BinaryCrossentropy,
 )
 
 from . import vgg19_loss as vgg19
@@ -24,6 +24,7 @@ class Losses:
             from_logits=True, reduction=Reduction.NONE
         )
         self.MSE = MeanSquaredError(reduction=Reduction.NONE)
+        self.MAE = tf.keras.losses.MeanAbsoluteError(reduction=Reduction.NONE)
         self.BCE = BinaryCrossentropy(from_logits=True, reduction=Reduction.NONE)
 
         self.vgg = VGG.build()
@@ -66,6 +67,14 @@ class Losses:
         # compute reduced mean over the entire batch
         loss = reduce_mean(loss) * (1.0 / self.num_replicas)
         # return reduced mse loss
+        return loss
+
+    def mae_loss(self, real, pred):
+        # compute mean absolute error without reduction
+        loss = self.MAE(real, pred)
+        # compute reduced mean over the entire batch
+        loss = reduce_mean(loss) * (1.0 / self.num_replicas)
+        # return reduced mae loss
         return loss
 
     def vgg_loss(self, real, pred):
