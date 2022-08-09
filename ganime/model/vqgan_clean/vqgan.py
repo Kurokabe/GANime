@@ -405,7 +405,7 @@ class VQGAN(keras.Model):
                     training=True,
                 )
                 logits_fake = self.discriminator(
-                    (disc_gen_input, disc_real_input),
+                    (disc_real_input, disc_gen_input),
                     training=True,
                 )
 
@@ -626,7 +626,7 @@ class VQGAN(keras.Model):
                 training=False,
             )
             logits_fake = self.discriminator(
-                (disc_gen_input, disc_real_input),
+                (disc_real_input, disc_gen_input),
                 training=False,
             )
 
