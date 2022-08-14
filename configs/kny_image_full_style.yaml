@@ -1,5 +1,5 @@
 model:
-  # checkpoint_path: ../../../checkpoints/kny_image_full/checkpoint
+  checkpoint_path: ../../../checkpoints/kny_image_full_style/checkpoint
   vqvae_config:
     beta: 0.25
     num_embeddings: 50257
@@ -35,8 +35,8 @@ model:
 trainer:
   batch_size: 32
   n_epochs: 10000
-  gen_lr: 5e-5
-  disc_lr: 5e-5
+  gen_lr: 8e-5
+  disc_lr: 8e-5
   gen_beta_1: 0.5
   gen_beta_2: 0.9
   disc_beta_1: 0.5
