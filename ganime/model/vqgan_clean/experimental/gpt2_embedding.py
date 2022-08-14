@@ -676,42 +676,6 @@ class TFGPT2PreTrainedModel(TFPreTrainedModel):
         return self.serving_output(output)
 
 
-@dataclass
-class TFGPT2DoubleHeadsModelOutput(ModelOutput):
-    """
-    Base class for outputs of models predicting if two sentences are consecutive or not.
-
-    Args:
-        logits (`tf.Tensor` of shape `(batch_size, num_choices, sequence_length, config.vocab_size)`):
-            Prediction scores of the language modeling head (scores for each vocabulary token before SoftMax).
-        mc_logits (`tf.Tensor` of shape `(batch_size, num_choices)`):
-            Prediction scores of the multiple choice classification head (scores for each choice before SoftMax).
-        past_key_values (`List[tf.Tensor]`, *optional*, returned when `use_cache=True` is passed or when `config.use_cache=True`):
-            List of `tf.Tensor` of length `config.n_layers`, with each tensor of shape `(2, batch_size, num_heads,
-            sequence_length, embed_size_per_head)`).
-
-            Contains pre-computed hidden-states (key and values in the attention blocks) that can be used (see
-            `past_key_values` input) to speed up sequential decoding.
-        hidden_states (`tuple(tf.Tensor)`, *optional*, returned when `output_hidden_states=True` is passed or when `config.output_hidden_states=True`):
-            Tuple of `tf.Tensor` (one for the output of the embeddings + one for the output of each layer) of shape
-            `(batch_size, sequence_length, hidden_size)`.
-
-            Hidden-states of the model at the output of each layer plus the initial embedding outputs.
-        attentions (`tuple(tf.Tensor)`, *optional*, returned when `output_attentions=True` is passed or when `config.output_attentions=True`):
-            Tuple of `tf.Tensor` (one for each layer) of shape `(batch_size, num_heads, sequence_length,
-            sequence_length)`.
-
-            Attentions weights after the attention softmax, used to compute the weighted average in the self-attention
-            heads.
-    """
-
-    logits: tf.Tensor = None
-    mc_logits: tf.Tensor = None
-    past_key_values: Optional[List[tf.Tensor]] = None
-    hidden_states: Optional[Tuple[tf.Tensor]] = None
-    attentions: Optional[Tuple[tf.Tensor]] = None
-
-
 GPT2_START_DOCSTRING = r"""
 
     This model inherits from [`TFPreTrainedModel`]. Check the superclass documentation for the generic methods the
@@ -918,6 +882,244 @@ class TFGPT2Model(TFGPT2PreTrainedModel):
 
         return TFBaseModelOutputWithPastAndCrossAttentions(
             last_hidden_state=output.last_hidden_state,
+            past_key_values=pkv,
+            hidden_states=hs,
+            attentions=attns,
+            cross_attentions=cross_attns,
+        )
+
+
+@add_start_docstrings(
+    """
+    The GPT2 Model transformer with a language modeling head on top (linear layer with weights tied to the input
+    embeddings).
+    """,
+    GPT2_START_DOCSTRING,
+)
+class TFGPT2LMHeadModel(TFGPT2PreTrainedModel, TFCausalLanguageModelingLoss):
+    def __init__(self, config, *inputs, **kwargs):
+        super().__init__(config, *inputs, **kwargs)
+        self.transformer = TFGPT2MainLayer(config, name="transformer")
+
+    def get_output_embeddings(self):
+        return self.get_input_embeddings()
+
+    def set_output_embeddings(self, value):
+        self.set_input_embeddings(value)
+
+    def prepare_inputs_for_generation(
+        self, inputs, past=None, use_cache=None, use_xla=False, **kwargs
+    ):
+        # TODO: (Joao) after the TF generator is complete, update GPT2 TF generation to match PT's. NB -- some GPT2
+        # tests will need to be fixed after the change
+
+        # only last token for inputs_ids if past is defined in kwargs
+        if past:
+            inputs = tf.expand_dims(inputs[:, -1], -1)
+
+        # TODO(pvp, Joao) - this `if use_xla` statement can be removed, but is left
+        # for a future PR to not change too many things for now.
+        # All statements in this if case apply for both xla and non-xla (as they already do in PyTorch)
+        position_ids = None
+        attention_mask = None
+        if use_xla:
+            attention_mask = kwargs.get("attention_mask", None)
+            if past is not None and attention_mask is not None:
+                position_ids = tf.reduce_sum(attention_mask, axis=1, keepdims=True) - 1
+            elif attention_mask is not None:
+                position_ids = tf.math.cumsum(attention_mask, axis=1, exclusive=True)
+
+        return {
+            "input_ids": inputs,
+            "attention_mask": attention_mask,
+            "position_ids": position_ids,
+            "past": past,
+            "use_cache": use_cache,
+        }
+
+    def _update_model_kwargs_for_xla_generation(
+        self, outputs, model_kwargs, current_pos, max_length
+    ):
+        # TODO(Pvp, Joao, Matt) - this function can be cleaned a bit and refactored
+        # quite some duplicated code patterns it seems
+        # also the `attention_mask` is currently used in a somewhat hacky to
+        # correctly influence the `past_key_values` - not sure if this is the way to go
+        # Let's keep that for a future PR.
+        past = outputs.past_key_values
+        is_past_initialized = model_kwargs.pop("past", None) is not None
+        attention_mask = model_kwargs.pop("attention_mask")
+        batch_size = attention_mask.shape[0]
+
+        if not is_past_initialized:
+            # past[0].shape[3] is seq_length of prompt
+            num_padding_values = max_length - past[0].shape[3] - 1
+
+            padding_values = np.zeros((5, 2), dtype=np.int32)
+            padding_values[3, 1] = num_padding_values
+            padding_values = tf.constant(padding_values)
+
+            new_past = list(past)
+            for i in range(len(past)):
+                new_past[i] = tf.pad(past[i], padding_values)
+
+            # Zeros for the currently-unfilled locations in the past tensor, ones for the actual input_ids
+            attention_mask = tf.concat(
+                [
+                    attention_mask,
+                    tf.zeros(
+                        (batch_size, num_padding_values), dtype=attention_mask.dtype
+                    ),
+                    tf.ones((batch_size, 1), dtype=attention_mask.dtype),
+                ],
+                axis=1,
+            )
+        else:
+            new_past = [None for _ in range(len(past))]
+            slice_start_base = tf.constant([0, 0, 0, 1, 0])
+            attention_mask_update_slice = tf.ones(
+                (batch_size, 1), dtype=attention_mask.dtype
+            )
+            # correct 5 here
+            new_past_index = current_pos - 1
+
+            for i in range(len(past)):
+                update_slice = past[i][:, :, :, -1:]
+                # Write the last slice to the first open location in the padded past array
+                # and then truncate the last slice off the array
+                new_past[i] = dynamic_update_slice(
+                    past[i][:, :, :, :-1],
+                    update_slice,
+                    slice_start_base * new_past_index,
+                )
+
+            update_start = tf.constant([0, 1], dtype=tf.int32) * new_past_index
+            attention_mask = dynamic_update_slice(
+                attention_mask, attention_mask_update_slice, update_start
+            )
+
+        # set `attention_mask` and `past`
+        model_kwargs["attention_mask"] = attention_mask
+        model_kwargs["past"] = tuple(new_past)
+
+        return model_kwargs
+
+    @unpack_inputs
+    @add_start_docstrings_to_model_forward(GPT2_INPUTS_DOCSTRING)
+    @add_code_sample_docstrings(
+        processor_class=_TOKENIZER_FOR_DOC,
+        checkpoint=_CHECKPOINT_FOR_DOC,
+        output_type=TFCausalLMOutputWithCrossAttentions,
+        config_class=_CONFIG_FOR_DOC,
+    )
+    def call(
+        self,
+        input_ids: Optional[TFModelInputType] = None,
+        remaining_frames_ids: Optional[Union[np.ndarray, tf.Tensor]] = None,
+        past: Optional[Tuple[Tuple[Union[np.ndarray, tf.Tensor]]]] = None,
+        attention_mask: Optional[Union[np.ndarray, tf.Tensor]] = None,
+        token_type_ids: Optional[Union[np.ndarray, tf.Tensor]] = None,
+        position_ids: Optional[Union[np.ndarray, tf.Tensor]] = None,
+        head_mask: Optional[Union[np.ndarray, tf.Tensor]] = None,
+        inputs_embeds: Optional[Union[np.ndarray, tf.Tensor]] = None,
+        encoder_hidden_states: Optional[Union[np.ndarray, tf.Tensor]] = None,
+        encoder_attention_mask: Optional[Union[np.ndarray, tf.Tensor]] = None,
+        use_cache: Optional[bool] = None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        return_dict: Optional[bool] = None,
+        labels: Optional[Union[np.ndarray, tf.Tensor]] = None,
+        training: Optional[bool] = False,
+    ) -> Union[TFCausalLMOutputWithCrossAttentions, Tuple[tf.Tensor]]:
+        r"""
+        encoder_hidden_states  (`tf.Tensor` of shape `(batch_size, sequence_length, hidden_size)`, *optional*):
+            Sequence of hidden-states at the output of the last layer of the encoder. Used in the cross-attention if
+            the model is configured as a decoder.
+        encoder_attention_mask (`tf.Tensor` of shape `(batch_size, sequence_length)`, *optional*):
+            Mask to avoid performing attention on the padding token indices of the encoder input. This mask is used in
+            the cross-attention if the model is configured as a decoder. Mask values selected in `[0, 1]`:
+
+            - 1 for tokens that are **not masked**,
+            - 0 for tokens that are **masked**.
+
+        past (`Tuple[Tuple[tf.Tensor]]` of length `config.n_layers`)
+            contains precomputed key and value hidden states of the attention blocks. Can be used to speed up decoding.
+            If `past` are used, the user can optionally input only the last `decoder_input_ids` (those that don't have
+            their past key value states given to this model) of shape `(batch_size, 1)` instead of all
+            `decoder_input_ids` of shape `(batch_size, sequence_length)`.
+        use_cache (`bool`, *optional*, defaults to `True`):
+            If set to `True`, `past_key_values` key value states are returned and can be used to speed up decoding (see
+            `past`). Set to `False` during training, `True` during generation
+        labels (`tf.Tensor` of shape `(batch_size, sequence_length)`, *optional*):
+            Labels for computing the cross entropy classification loss. Indices should be in `[0, ...,
+            config.vocab_size - 1]`.
+        """
+
+        transformer_outputs = self.transformer(
+            input_ids=input_ids,
+            remaining_frames_ids=remaining_frames_ids,
+            past=past,
+            attention_mask=attention_mask,
+            token_type_ids=token_type_ids,
+            position_ids=position_ids,
+            head_mask=head_mask,
+            inputs_embeds=inputs_embeds,
+            encoder_hidden_states=encoder_hidden_states,
+            encoder_attention_mask=encoder_attention_mask,
+            use_cache=use_cache,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
+            training=training,
+        )
+        hidden_states = transformer_outputs[0]
+        logits = self.transformer.wte(hidden_states, mode="linear")
+
+        loss = None
+        if labels is not None:
+            # shift labels to the left and cut last logit token
+            shifted_logits = logits[:, :-1]
+            labels = labels[:, 1:]
+            loss = self.hf_compute_loss(labels, shifted_logits)
+
+        if not return_dict:
+            output = (logits,) + transformer_outputs[1:]
+            return ((loss,) + output) if loss is not None else output
+
+        return TFCausalLMOutputWithCrossAttentions(
+            loss=loss,
+            logits=logits,
+            past_key_values=transformer_outputs.past_key_values,
+            hidden_states=transformer_outputs.hidden_states,
+            attentions=transformer_outputs.attentions,
+            cross_attentions=transformer_outputs.cross_attentions,
+        )
+
+    def serving_output(self, output):
+        pkv = (
+            tf.convert_to_tensor(output.past_key_values)
+            if self.config.use_cache
+            else None
+        )
+        hs = (
+            tf.convert_to_tensor(output.hidden_states)
+            if self.config.output_hidden_states
+            else None
+        )
+        attns = (
+            tf.convert_to_tensor(output.attentions)
+            if self.config.output_attentions
+            else None
+        )
+        cross_attns = (
+            tf.convert_to_tensor(output.cross_attentions)
+            if self.config.output_attentions
+            and self.config.add_cross_attention
+            and output.cross_attentions is not None
+            else None
+        )
+
+        return TFCausalLMOutputWithCrossAttentions(
+            logits=output.logits,
             past_key_values=pkv,
             hidden_states=hs,
             attentions=attns,
