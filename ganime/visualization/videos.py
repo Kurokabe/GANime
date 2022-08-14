@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from IPython.display import HTML
 from matplotlib import animation
+from ganime.visualization.images import unnormalize_if_necessary
 
 
 def display_videos(data, ground_truth=None, n_rows=3, n_cols=3):
@@ -21,7 +22,8 @@ def display_videos(data, ground_truth=None, n_rows=3, n_cols=3):
         for j in range(n_cols):
             idx = i * n_cols + j
             video = data[idx]
-            im = axs[i][j].imshow(video[0, :, :, :], animated=True)
+            frame = unnormalize_if_necessary(video[0])
+            im = axs[i][j].imshow(frame, animated=True)
             ims.append(im)
 
             plt.close()  # this is required to not display the generated image
@@ -32,7 +34,8 @@ def display_videos(data, ground_truth=None, n_rows=3, n_cols=3):
                 idx = i * n_cols + j
                 video = data[idx]
                 im = ims[idx]
-                im.set_data(video[0, :, :, :])
+                frame = unnormalize_if_necessary(video[0])
+                im.set_data(frame)
         return ims
 
     def animate(frame_id):
@@ -40,7 +43,8 @@ def display_videos(data, ground_truth=None, n_rows=3, n_cols=3):
             for j in range(n_cols):
                 idx = i * n_cols + j
                 video = data[idx]
-                d = video[frame_id, :, :, :]
+                frame = video[frame_id, :, :, :]
+                frame = unnormalize_if_necessary(frame)
                 # if frame_id % 2 == 0:
                 #     d[0:2, :, 0] = 255
                 #     d[0:2, :, 1] = 0
@@ -48,7 +52,7 @@ def display_videos(data, ground_truth=None, n_rows=3, n_cols=3):
                 #     d[-2:, :, 0] = 255
                 #     d[-2:, :, 1] = 0
                 #     d[-2:, :, 2] = 0
-                ims[idx].set_data(d)
+                ims[idx].set_data(frame)
         return ims
 
     anim = animation.FuncAnimation(

@@ -5,13 +5,14 @@ import tensorflow as tf
 
 def display_images(data, n_rows=3, n_cols=3):
     figure, axs = plt.subplots(n_rows, n_cols, figsize=(24, 12))
-    
+
     axs = axs.flatten()
-    
+
     plt.setp(axs, xticks=[], yticks=[])
     plt.subplots_adjust(wspace=0, hspace=0)
-    
+
     for img, ax in zip(data, axs):
+        img = unnormalize_if_necessary(img)
         ax.imshow(img)
 
     return figure
@@ -20,7 +21,6 @@ def display_images(data, n_rows=3, n_cols=3):
 def unnormalize_if_necessary(x):
     if isinstance(x, np.ndarray):
         if x.min() < 0:
-
             return (x * 0.5) + 0.5
     elif isinstance(x, tf.Tensor):
         if x.numpy().min() < 0:

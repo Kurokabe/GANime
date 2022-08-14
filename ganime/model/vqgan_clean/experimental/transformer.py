@@ -23,14 +23,16 @@ class Transformer(Model):
     def load_transformer(self, method) -> TFPreTrainedModel:
         print("using method ", method)
         if method == "own_embeddings":
-            from ganime.model.vqgan_clean.experimental.gpt2_embedding import TFGPT2Model
+            from ganime.model.vqgan_clean.experimental.gpt2_embedding import (
+                TFGPT2LMHeadModel,
+            )
 
-            transformer = TFGPT2Model.from_pretrained("gpt2-medium")
+            transformer = TFGPT2LMHeadModel.from_pretrained("gpt2-medium")
 
         else:
-            from transformers import TFGPT2Model
+            from transformers import TFGPT2LMHeadModel
 
-            transformer = TFGPT2Model.from_pretrained("gpt2-medium")
+            transformer = TFGPT2LMHeadModel.from_pretrained("gpt2-medium")
         return transformer
 
     def concatenate_inputs(
@@ -78,13 +80,14 @@ class Transformer(Model):
             remaining_frames, last_frame_indices, previous_frame_indices
         )
 
-        transformer_input = h[:, :-1]
+        # transformer_input = h[:, :-1]
+        transformer_input = h
         mask = tf.ones_like(transformer_input) * tf.cast(
             tf.cast(remaining_frames, dtype=tf.bool), dtype=remaining_frames.dtype
         )
 
         h = self.call_transformer(transformer_input, remaining_frames, training, mask)
-        h = h.last_hidden_state
-        h = self.transformer.transformer.wte(h, mode="linear")
+        h = h.logits
+        # h = self.transformer.transformer.wte(h, mode="linear")
         h = h[:, -shape_to_keep:]
         return h
