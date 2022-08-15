@@ -27,12 +27,12 @@ class Transformer(Model):
                 TFGPT2LMHeadModel,
             )
 
-            transformer = TFGPT2LMHeadModel.from_pretrained("gpt2-medium")
+            transformer = TFGPT2LMHeadModel.from_pretrained("gpt2-large")
 
         else:
             from transformers import TFGPT2LMHeadModel
 
-            transformer = TFGPT2LMHeadModel.from_pretrained("gpt2-medium")
+            transformer = TFGPT2LMHeadModel.from_pretrained("gpt2-large")
         return transformer
 
     def concatenate_inputs(
