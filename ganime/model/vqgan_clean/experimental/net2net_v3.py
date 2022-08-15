@@ -9,8 +9,7 @@ from tensorflow import keras
 from tensorflow.keras import Model, layers
 from ganime.model.vqgan_clean.losses.losses import Losses
 from ganime.trainer.warmup.base import create_warmup_scheduler
-
-PREVIOUS_FRAMES = 5
+from ganime.visualization.images import unnormalize_if_necessary
 
 
 class Net2Net(Model):
@@ -104,6 +103,11 @@ class Net2Net(Model):
     def call(self, inputs, training=False, mask=None, return_losses=False):
 
         return self.predict_video(inputs, training, return_losses)
+
+    def predict(self, data):
+        video = self.predict_video(data, training=False, return_losses=False)
+        video = unnormalize_if_necessary(video)
+        return video
 
     def get_remaining_frames(self, inputs):
         if "remaining_frames" in inputs:

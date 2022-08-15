@@ -6,7 +6,7 @@ from typing import Optional
 import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
-from ganime.visualization.images import display_true_pred
+from ganime.visualization.images import display_true_pred, unnormalize_if_necessary
 
 
 def get_logdir(parent_folder: str, experiment_name: Optional[str] = None) -> str:
@@ -109,17 +109,25 @@ class TensorboardVideo(tf.keras.callbacks.Callback):
 
         # train_X, train_y = self.train
         # train_X, train_y = self.truncate_X_y(train_X, train_y, self.n_videos)
-        train_pred = self.model(self.train)
-        self.write_to_tensorboard(self.train["y"], train_pred, "Training data", epoch)
+        train_pred = self.model.predict(self.train)
+        self.write_to_tensorboard(
+            unnormalize_if_necessary(self.train["y"]),
+            train_pred,
+            "Training data",
+            epoch,
+        )
 
         if self.validation is not None:
             # validation_X, validation_y = self.validation
             # validation_X, validation_y = self.truncate_X_y(
             #     validation_X, validation_y, self.n_videos
             # )
-            validation_pred = self.model(self.validation)
+            validation_pred = self.model.predict(self.validation)
             self.write_to_tensorboard(
-                self.validation["y"], validation_pred, "Validation data", epoch
+                unnormalize_if_necessary(self.validation["y"]),
+                validation_pred,
+                "Validation data",
+                epoch,
             )
 
     def truncate_X_y(self, X, y, n_videos):
