@@ -202,3 +202,7 @@ models/*
 notebooks/model/p2p_v2/*
 logs/*
 interesting_logs/*
+notebooks/model/vq-gan/train_output/*
+notebooks/model/vq-gan/validation_output/*
+notebooks/model/vq-gan/test_output/*
+*.zip

@@ -104,8 +104,14 @@ class Net2Net(Model):
 
         return self.predict_video(inputs, training, return_losses)
 
-    def predict(self, data):
-        video = self.predict_video(data, training=False, return_losses=False)
+    def predict(self, data, sample=False, temperature=1.0):
+        video = self.predict_video(
+            data,
+            training=False,
+            return_losses=False,
+            sample=sample,
+            temperature=temperature,
+        )
         video = unnormalize_if_necessary(video)
         return video
 
@@ -117,8 +123,10 @@ class Net2Net(Model):
         remaining_frames = tf.cast(remaining_frames, tf.int64)
         return remaining_frames
 
-    @tf.function()
-    def predict_video(self, inputs, training=False, return_losses=False):
+    # @tf.function()
+    def predict_video(
+        self, inputs, training=False, return_losses=False, sample=False, temperature=1.0
+    ):
         first_frame = inputs["first_frame"]
         last_frame = inputs["last_frame"]
         n_frames = tf.reduce_max(inputs["n_frames"])
@@ -162,6 +170,8 @@ class Net2Net(Model):
                 quant_last,
                 target_frame=target_frame,
                 training=training,
+                sample=sample,
+                temperature=temperature,
             )
             predictions = predictions.write(current_frame_index, y_pred)
 
@@ -203,6 +213,8 @@ class Net2Net(Model):
         quant_last,
         target_frame=None,
         training=False,
+        sample=False,
+        temperature=1.0,
     ):
         # previous frames is of shape (batch_size, n_frames, height, width, 3)
         previous_frames = tf.transpose(previous_frames, (1, 0, 2, 3, 4))
@@ -250,6 +262,8 @@ class Net2Net(Model):
                 target_frame=target_frame,
                 quant_shape=tf.shape(quant_last),
                 indices_shape=tf.shape(indices_last),
+                sample=sample,
+                temperature=temperature,
             )
 
         return next_frame, losses
@@ -263,6 +277,8 @@ class Net2Net(Model):
         indices_shape,
         target_indices=None,
         target_frame=None,
+        sample=False,
+        temperature=1.0,
     ):
         logits = self.transformer(
             (remaining_frames, last_frame_indices, previous_frame_indices)
@@ -271,6 +287,8 @@ class Net2Net(Model):
             logits,
             quant_shape=quant_shape,
             indices_shape=indices_shape,
+            sample=sample,
+            temperature=temperature,
         )
         if target_indices is not None:
             scce_loss = self.scce_loss(target_indices, logits)
@@ -309,6 +327,7 @@ class Net2Net(Model):
                 quant_shape=quant_shape,
                 indices_shape=indices_shape,
                 target_frame=target_frame,
+                sample=False,
             )
         frame_loss = losses[0]
         # Calculate batch gradients
@@ -320,9 +339,28 @@ class Net2Net(Model):
 
         return next_frame, losses
 
-    def convert_logits_to_image(self, logits, quant_shape, indices_shape):
-        probs = tf.keras.activations.softmax(logits)
-        _, generated_indices = tf.math.top_k(probs)
+    def convert_logits_to_image(
+        self, logits, quant_shape, indices_shape, sample=False, temperature=1.0
+    ):
+        if sample:
+            array = []
+            for i in range(logits.shape[1]):
+                sub_logits = logits[:, i]
+                sub_logits = sub_logits / temperature
+                # sub_logits, _ = tf.math.top_k(sub_logits, k=1)
+                probs = tf.keras.activations.softmax(sub_logits)
+                probs, probs_index = tf.math.top_k(probs, k=50)
+                selection_index = tf.random.categorical(
+                    tf.math.log(probs), num_samples=1
+                )
+                ix = tf.gather_nd(probs_index, selection_index, batch_dims=1)
+                ix = tf.reshape(ix, (-1, 1))
+                array.append(ix)
+            generated_indices = tf.concat(array, axis=-1)
+        else:
+            probs = tf.keras.activations.softmax(logits)
+            _, generated_indices = tf.math.top_k(probs)
+
         generated_indices = tf.reshape(
             generated_indices,
             indices_shape,

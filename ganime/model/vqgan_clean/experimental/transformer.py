@@ -3,13 +3,29 @@ from tensorflow.keras import Model
 import tensorflow as tf
 from transformers import TFPreTrainedModel
 
+valid_types = ["gpt2", "gpt2", "gpt2-medium", "gpt2-large", "gpt2-xl"]
+
 
 class Transformer(Model):
     def __init__(self, config):
         super().__init__()
         self.config = config
         self.remaining_frames_method = self.get_remaining_frames_method(config)
-        self.transformer = self.load_transformer(self.remaining_frames_method)
+        self.transformer_type = self.get_transformer_type(config)
+        self.transformer = self.load_transformer(
+            self.remaining_frames_method, self.transformer_type
+        )
+
+    def get_transformer_type(self, config):
+        if "transformer_type" in config:
+            transformer_type = config["transformer_type"]
+            if transformer_type not in valid_types:
+                raise ValueError(
+                    f"transformer_type {transformer_type} is not valid. Valid types are {valid_types}"
+                )
+            return transformer_type
+        else:
+            return valid_types[0]
 
     def get_remaining_frames_method(self, config) -> str:
         """Get the method to use for remaining frames.
@@ -20,19 +36,19 @@ class Transformer(Model):
         else:
             return "concat"
 
-    def load_transformer(self, method) -> TFPreTrainedModel:
+    def load_transformer(self, method: str, transformer_type: str) -> TFPreTrainedModel:
         print("using method ", method)
         if method == "own_embeddings":
             from ganime.model.vqgan_clean.experimental.gpt2_embedding import (
                 TFGPT2LMHeadModel,
             )
 
-            transformer = TFGPT2LMHeadModel.from_pretrained("gpt2-large")
+            transformer = TFGPT2LMHeadModel.from_pretrained(transformer_type)
 
         else:
             from transformers import TFGPT2LMHeadModel
 
-            transformer = TFGPT2LMHeadModel.from_pretrained("gpt2-large")
+            transformer = TFGPT2LMHeadModel.from_pretrained(transformer_type)
         return transformer
 
     def concatenate_inputs(

@@ -2,6 +2,7 @@ model:
   transformer_config:
     checkpoint_path: ../../../checkpoints/moving_mnist_video/checkpoint
     remaining_frames_method: "own_embeddings"
+    transformer_type: "gpt2-medium"
   first_stage_config:
     checkpoint_path: ../../../checkpoints/kny_image_full_vgg19/checkpoint
     vqvae_config:

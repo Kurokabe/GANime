@@ -1,8 +1,8 @@
 model:
   transformer_config:
-    checkpoint_path: ../../../checkpoints/moving_mnist_video/checkpoint
+    checkpoint_path: ../../../checkpoints/kny_video_full_gpt2_large/checkpoint
     remaining_frames_method: "own_embeddings"
-    transformer_type: "gpt2-medium"
+    transformer_type: "gpt2-large"
   first_stage_config:
     checkpoint_path: ../../../checkpoints/kny_image_full_vgg19/checkpoint
     vqvae_config:
@@ -38,13 +38,13 @@ model:
       perceptual_loss: "vgg19"
 
 train:
-  batch_size: 16
+  batch_size: 64
   accumulation_size: 1
   n_epochs: 2000
-  len_x_train: 8000
+  len_x_train: 28213
   warmup_epoch_percentage: 0.15
   lr_start: 1e-5
   lr_max: 2.5e-4
   perceptual_loss_weight: 1.0
-  n_frames_before: 5
-  stop_ground_truth_after_epoch: 500
+  n_frames_before: 1
+  stop_ground_truth_after_epoch: 50
