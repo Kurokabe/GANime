@@ -1,5 +1,5 @@
 model:
-  checkpoint_path: ../../../checkpoints/mnist_image/checkpoint
+  checkpoint_path: ../../../checkpoints/moving_mnist_image/checkpoint
   vqvae_config:
     beta: 0.25
     num_embeddings: 50257
