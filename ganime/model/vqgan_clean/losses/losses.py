@@ -29,8 +29,13 @@ class Losses:
 
         self.vgg = VGG.build()
         self.preprocess = preprocess_input
+        try:
+          root_dir = here()
+        except RecursionError:
+          root_dir = "GANime"
+
         self.vgg_model_file = (
-            os.path.join(here(), "models", "vgg19", "imagenet-vgg-verydeep-19.mat")
+            os.path.join(root_dir, "models", "vgg19", "imagenet-vgg-verydeep-19.mat")
             if vgg_model_file is None
             else vgg_model_file
         )

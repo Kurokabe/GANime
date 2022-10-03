@@ -1,4 +1,8 @@
-from typing import List, Literal, Optional, Tuple
+from typing import List, Optional, Tuple
+try:
+    from typing import Literal
+except ImportError:
+    from typing_extensions import Literal
 
 import numpy as np
 import tensorflow as tf
@@ -194,9 +198,10 @@ class VQGAN(keras.Model):
         # Defer the shape initialization
         # self.vqvae = self.get_vqvae(input_shape)
 
+        super().build(input_shape)
+        self.built = True
         if self.checkpoint_path is not None:
             self.load_from_checkpoint(self.checkpoint_path)
-        super().build(input_shape)
 
     # def get_vqvae(self, input_shape):
     #     inputs = keras.Input(shape=input_shape[1:])

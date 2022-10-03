@@ -1,5 +1,9 @@
 from dataclasses import dataclass
-from typing import List, Literal
+from typing import List
+try:
+    from typing import Literal
+except ImportError:
+    from typing_extensions import Literal
 
 
 @dataclass
