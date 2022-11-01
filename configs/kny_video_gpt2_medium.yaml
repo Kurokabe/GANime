@@ -1,10 +1,10 @@
 model:
   transformer_config:
-    # checkpoint_path: ../../../checkpoints/kny_video_full_gpt2_xl/checkpoint
+    checkpoint_path: ./checkpoints/kny_video_full_gpt2_medium/checkpoint
     remaining_frames_method: "own_embeddings"
     transformer_type: "gpt2-medium"
   first_stage_config:
-    checkpoint_path: ../../../checkpoints/kny_image_full_vgg19/checkpoint
+    checkpoint_path: ./checkpoints/kny_image_full_vgg19/checkpoint
     vqvae_config:
       beta: 0.25
       num_embeddings: 50257

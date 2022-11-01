@@ -1,0 +1,51 @@
+model:
+  transformer_config:
+    # checkpoint_path: ../../../checkpoints/kny_video_light_gpt2_large_256/checkpoint
+    remaining_frames_method: "own_embeddings"
+    transformer_type: "gpt2-large"
+  first_stage_config:
+    checkpoint_path: ../../../checkpoints/kny_image_light_256_larger_disc/checkpoint
+    vqvae_config:
+      beta: 0.25
+      num_embeddings: 50257
+      embedding_dim: 256
+    autoencoder_config:
+      z_channels: 256
+      channels: 128
+      channels_multiplier: 
+      - 1
+      - 1
+      - 2
+      - 2
+      - 2
+      num_res_blocks: 1
+      attention_resolution: 
+      - #16
+      resolution: 256
+      dropout: 0.0
+    discriminator_config:
+      num_layers: 3
+      filters: 64
+      
+    loss_config:
+      discriminator:
+        loss: "hinge"
+        factor: 1.0
+        iter_start: 500000
+        weight: 0.8
+      vqvae:
+        codebook_weight: 1.0
+        perceptual_weight: 4.0
+      perceptual_loss: "vgg19" # "vgg16", "vgg19", "style"
+
+train:
+  batch_size: 64
+  accumulation_size: 1
+  n_epochs: 10000
+  len_x_train: 789
+  warmup_epoch_percentage: 0.15
+  lr_start: 1e-5
+  lr_max: 2.5e-4
+  perceptual_loss_weight: 1.0
+  n_frames_before: 1
+  stop_ground_truth_after_epoch: 10000

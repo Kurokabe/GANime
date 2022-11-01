@@ -293,7 +293,7 @@ class Net2Net(Model):
         if target_indices is not None:
             scce_loss = self.scce_loss(target_indices, logits)
         else:
-            frame_loss = 0.0
+            scce_loss = 0.0
 
         if target_frame is not None:
             perceptual_loss = 1.0 * self.perceptual_loss(target_frame, next_frame)

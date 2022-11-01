@@ -65,11 +65,14 @@ def load_videos(
 
     video_paths = get_filepaths(path, extension)
     print("loading videos...")
-    videos = Parallel(n_jobs=n_jobs)(
-        delayed(load_and_resize_video)(path, resize, min_ideal_length, max_ideal_length)
-        for path in tqdm(video_paths)
-    )
+    # videos = Parallel(n_jobs=n_jobs)(
+    #     delayed(load_and_resize_video)(path, resize, min_ideal_length, max_ideal_length)
+    #     for path in tqdm(video_paths)
+    # )
+    videos = [load_and_resize_video(path, resize, min_ideal_length, max_ideal_length) for path in tqdm(video_paths)]
+    print("before concat")
     videos = tf.concat(videos, axis=0)
+    print("after concat")
     videos = videos.numpy()
     return videos
 

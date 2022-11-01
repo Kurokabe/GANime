@@ -88,7 +88,7 @@ class Dataset(ABC):
             while current_shard_count < max_files:  # as long as our shard is not full
                 # get the index of the file that we want to parse now
                 index = i * max_files + current_shard_count
-                if index == len(
+                if index >= len(
                     data
                 ):  # when we have consumed the whole data, preempt generation
                     break
