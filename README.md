@@ -13,7 +13,7 @@
 
 This project is a Master thesis realised by Farid Abdalla at HES-SO in partnership with Osaka Prefecture University (now renamed to Osaka Metropolitan University) in Japan. A PyTorch implementation is available on [this repository](https://github.com/Kurokabe/TorchGANime).
 
-All implementation details are available in the [paper pdf](./assets/GANime_paper.pdf)
+All implementation details are available in this [pdf](./assets/GANime_paper.pdf).
 
 ## Good results
 For each pair of rows, the first row is the generated result and the second row is the ground truth.
