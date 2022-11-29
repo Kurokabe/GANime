@@ -206,3 +206,4 @@ notebooks/model/vq-gan/validation_output/*
 notebooks/model/vq-gan/test_output/*
 *.zip
 flagged/*
+notebooks/model/vq-gan/gpt_kny_light_large_256/*

@@ -11,7 +11,7 @@ services:
       - "./:/GANime"
     ports:
       - "8888:8888"
-      - "7860:7860"
+      # - "7860:7860"
     command: jupyter lab --allow-root --ip="*" --token=easy
     #command: jupyter nbconvert --execute --to notebook /GANime/notebooks/model/vq-gan/min_gpt.ipynb
     deploy:
@@ -38,3 +38,24 @@ services:
     ports:
       - "6009:6009"
     command: tensorboard --logdir=/ganime_results --bind_all --port=6009
+
+  gradio:
+    # you can change this to whatever you want.
+    container_name: gradio
+    restart: always
+    build:
+      context: ./
+      dockerfile: ./Dockerfile
+    volumes:
+      - "./:/GANime"
+    ports:
+      - "7800:7860"
+    command: python app.py
+    #command: jupyter nbconvert --execute --to notebook /GANime/notebooks/model/vq-gan/min_gpt.ipynb
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [ gpu ]

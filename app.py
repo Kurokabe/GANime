@@ -10,25 +10,27 @@ from pyprojroot.pyprojroot import here
 
 from ganime.model.vqgan_clean.experimental.net2net_v3 import Net2Net
 
-cfg = omegaconf.OmegaConf.load(here("configs/kny_video_gpt2_medium.yaml"))
+IMAGE_SHAPE = (64, 128, 3)
+
+cfg = omegaconf.OmegaConf.load(here("configs/kny_video_gpt2_large_gradio.yaml"))
 model = Net2Net(**cfg["model"], trainer_config=cfg["train"], num_replicas=1)
-model.first_stage_model.build((20, 64, 128, 3))
+model.first_stage_model.build((20, *IMAGE_SHAPE))
 
 
-def save_video(video):
-    b, f, h, w, c = 1, 20, 500, 500, 3
+# def save_video(video):
+#     b, f, h, w, c = 1, 20, 500, 500, 3
 
-    # filename = output_file.name
-    filename = "./test_video.mp4"
-    images = []
-    for i in range(f):
-        # image = video[0][i].numpy()
-        # image = 255 * image  # Now scale by 255
-        # image = image.astype(np.uint8)
-        images.append(np.random.randint(0, 255, (h, w, c), dtype=np.uint8))
+#     # filename = output_file.name
+#     filename = "./test_video.mp4"
+#     images = []
+#     for i in range(f):
+#         # image = video[0][i].numpy()
+#         # image = 255 * image  # Now scale by 255
+#         # image = image.astype(np.uint8)
+#         images.append(np.random.randint(0, 255, (h, w, c), dtype=np.uint8))
 
-    ffmpegio.video.write(filename, 20, np.array(images), overwrite=True)
-    return filename
+#     ffmpegio.video.write(filename, 20, np.array(images), overwrite=True)
+#     return filename
 
 
 def save_video(video):
@@ -43,6 +45,12 @@ def save_video(video):
     return filename
 
 
+def resize_if_necessary(image):
+    if image.shape[0] != 64 and image.shape[1] != 128:
+        image = tf.image.resize(image, (64, 128))
+    return image
+
+
 def normalize(image):
     image = (tf.cast(image, tf.float32) / 127.5) - 1
 
@@ -50,7 +58,10 @@ def normalize(image):
 
 
 def generate(first, last, n_frames):
-    n_frames = 20
+    # n_frames = 20
+    n_frames = int(n_frames)
+    first = resize_if_necessary(first)
+    last = resize_if_necessary(last)
     first = normalize(first)
     last = normalize(last)
     data = {
@@ -69,8 +80,14 @@ gr.Interface(
     generate,
     inputs=[
         gr.Image(label="Upload the first image"),
-        gr.inputs.Image(label="Upload the last image"),
-        gr.Number(label="Number of frame to generate", value=15, precision=0),
+        gr.Image(label="Upload the last image"),
+        gr.Slider(
+            label="Number of frame to generate",
+            minimum=15,
+            maximum=100,
+            value=15,
+            step=1,
+        ),
     ],
     outputs="video",
     title="Generate a video from the first and last frame",

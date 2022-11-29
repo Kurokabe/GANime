@@ -39,7 +39,7 @@ model:
       perceptual_loss: "vgg19" # "vgg16", "vgg19", "style"
 
 train:
-  batch_size: 8
+  batch_size: 64
   accumulation_size: 1
   n_epochs: 10000
   len_x_train: 789
